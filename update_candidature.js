@@ -179,29 +179,3 @@ function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente) {
     return { alerteMail: true, info: `Entreprise: ${analyse.entreprise} | Verdict: ${analyse.verdict} | Lien: ${thread.getPermalink()}` };
   }
 }
-
-/**
- * UTILS : Normalisation (Minuscules, sans accents, sans mots parasites)
- */
-function normaliser(t) {
-  if (!t) return "";
-  return t.toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Supprime les accents
-    .replace(/(hiring team|team|group|sas|inc|corp|ltd|re:|fwd:)/gi, "")
-    .replace(/[^\w\s]/gi, "")
-    .trim();
-}
-
-function appliquerLabelVerdict(thread, verdict) {
-  let nom = "IA-Réponse-En-Cours";
-  if (verdict === "Refusé") nom = "IA-Réponse-Refusée";
-  if (verdict === "Entretien") nom = "IA-Réponse-Entretien";
-  if (verdict === "Accepté") nom = "IA-Réponse-Acceptée";
-  const label = GmailApp.getUserLabelByName(nom) || GmailApp.createLabel(nom);
-  thread.addLabel(label);
-}
-
-function envoyerMailAlerteGroupee(alertes) {
-  const corps = "Bonjour,\n\nDes réponses ont été détectées mais n'ont pas pu être liées à une ligne 'En attente' :\n\n- " + alertes.join("\n- ");
-  MailApp.sendEmail(Session.getActiveUser().getEmail(), "⚠️ Alerte : Réponses RH (Matching échoué)", corps);
-}

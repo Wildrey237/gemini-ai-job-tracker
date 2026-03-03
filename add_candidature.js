@@ -157,14 +157,3 @@ function traiterNouvelEmailAmeliore(thread, sheet, dataTableau) {
     return { succes: true, type: "ajout", info: `Ajouté: ${data.entreprise}` };
   }
 }
-
-/**
- * UTILS : Normalisation (Minuscules, sans accents)
- */
-function normaliserS1(t) {
-  if (!t) return "";
-  return t.toLowerCase()
-    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .replace(/(hiring team|team|group|sas|inc|corp|ltd)/gi, "")
-    .trim();
-}
