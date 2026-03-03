@@ -84,7 +84,7 @@ function analyserMailsReponsesRecues() {
  * COLLECTE : Filtre Gmail (7 jours pour tests)
  */
 function collecterEmailsFiltres(entreprises) {
-  const periode = "7d"; // MODIFIER ICI : "2d" pour la prod
+  const periode = "1d"; // MODIFIER ICI : "2d" pour la prod
   const labelAjoute = "IA-Candidature-Ajoutée";
   const labelsResultats = '(-label:IA-Réponse-Refusée -label:IA-Réponse-Entretien -label:IA-Réponse-En-Cours -label:IA-Réponse-Acceptée)';
   

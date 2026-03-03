@@ -1,14 +1,26 @@
 /**
- * SCRIPT 1 : Détection, Ajout et Enrichissement de candidatures
+ * CONFIGURATION : Blacklist pour ignorer les publicités/alertes jobs
+ */
+const CONFIG_S1 = {
+  "blacklist": [
+    "jobalerts-noreply@linkedin.com",
+    "jobs-listings@linkedin.com",
+    "notifications-noreply@linkedin.com",
+    "no-reply@glassdoor.com"
+  ]
+};
+
+/**
+ * SCRIPT 1 : Détection, Ajout et Enrichissement avec Logs détaillés
  */
 function analyserMailsCandidaturesEnvoyees() {
   const nomF = "add_candidature";
   const props = PropertiesService.getScriptProperties();
   const sheetName = props.getProperty('SHEET_NAME');
   
-  let stats = { emailsVus: 0, count: 0, enrichis: 0, details: [] };
+  let stats = { scannes: 0, ajouts: 0, enrichis: 0, details: [] };
 
-  console.log(">>> [DEBUT] Lancement du scan des nouvelles candidatures...");
+  console.log(">>> [DEBUT] Scan des candidatures avec Audit Logs...");
 
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -16,133 +28,143 @@ function analyserMailsCandidaturesEnvoyees() {
     if (!sheet) throw new Error(`Feuille ${sheetName} introuvable.`);
 
     const threads = collecterNouvellesCandidatures();
-    stats.emailsVus = threads.length;
+    stats.scannes = threads.length;
 
-    if (stats.emailsVus > 0) {
-      threads.forEach((thread) => {
-        // CHANGEMENT CRUCIAL : On recharge les noms d'entreprises à chaque itération 
-        // pour détecter un ajout qui viendrait d'être fait dans la même boucle (ex: LinkedIn + Mail direct)
-        const dataTableau = sheet.getRange(1, 1, Math.max(sheet.getLastRow(), 1), 1).getValues();
+    if (stats.scannes > 0) {
+      for (const thread of threads) {
+        // On récupère le tableau à chaque fois pour voir les ajouts immédiats
+        const dataTableau = sheet.getRange(1, 1, Math.max(sheet.getLastRow(), 1), 8).getValues();
         
-        const resultat = traiterNouvelEmail(thread, sheet, dataTableau);
+        const resultat = traiterNouvelEmailAmeliore(thread, sheet, dataTableau);
         
-        if (resultat.succes) {
-          if (resultat.type === "ajout") {
-            stats.count++;
-          } else {
-            stats.enrichis++;
-          }
+        if (resultat && resultat.succes) {
+          if (resultat.type === "ajout") stats.ajouts++;
+          if (resultat.type === "enrichissement") stats.enrichis++;
           stats.details.push(resultat.info);
+          
+          SpreadsheetApp.flush();
+          // LABELLISATION UNIQUEMENT SI ACTION REUSSIE
+          const label = GmailApp.getUserLabelByName("IA-Candidature-Ajoutée") || GmailApp.createLabel("IA-Candidature-Ajoutée");
+          thread.addLabel(label);
         }
-      });
+      }
     }
 
-    // TES LOGS SONT BIEN ICI
-    const resume = construireResumeFinal("Ajout/Enrichissement", stats);
-    console.log(">>> [LOG EXCEL] Résumé final : " + resume);
-    enregistrerLog(nomF, resume, false, "");
+    const resume = `Scan: ${stats.scannes} | Ajouts: ${stats.ajouts} | Enrichis: ${stats.enrichis}`;
+    console.log(">>> [RESUME FINAL] : " + resume);
+    enregistrerLog(nomF, resume, false, stats.details.join("\n"));
 
   } catch (e) {
-    console.error("!!! [ERREUR] : " + e.toString());
-    enregistrerLog(nomF, "Erreur Add", true, e.toString());
+    console.error("!!! [ERREUR S1] : " + e.toString());
+    if (typeof enregistrerLog === "function") {
+      enregistrerLog(nomF, "Erreur Add", true, e.toString());
+    }
   }
 }
 
 /**
- * REQUÊTE AMÉLIORÉE : LinkedIn + Confirmations directes
+ * COLLECTE : Recherche Gmail (1 jours)
  */
 function collecterNouvellesCandidatures() {
-  const labelName = "IA-Candidature-Ajoutée";
-  // Mots-clés élargis pour LinkedIn ("candidature envoyée") et plateformes RH
-  const keywords = '(confirmation OR received OR "votre candidature a été envoyée" OR "votre candidature chez" OR "thank you for applying")';
-  
-  const query = `newer_than:7d -label:${labelName} ${keywords}`;
+  const query = 'newer_than:1d -label:IA-Candidature-Ajoutée (confirmation OR received OR "candidature envoyée" OR "thank you for applying")';
   return GmailApp.search(query, 0, 15);
 }
 
 /**
- * TRAITEMENT : Matching intelligent par Nom et Domaine Email
+ * TRAITEMENT : Analyse avec logs de contenu
  */
-function traiterNouvelEmail(thread, sheet, dataTableau) {
-  const label = GmailApp.getUserLabelByName("IA-Candidature-Ajoutée") || GmailApp.createLabel("IA-Candidature-Ajoutée");
-  const message = thread.getMessages()[thread.getMessages().length - 1];
+function traiterNouvelEmailAmeliore(thread, sheet, dataTableau) {
+  const message = thread.getMessages().pop();
+  const rawSender = message.getFrom().toLowerCase();
+  const subject = message.getSubject();
   const body = message.getPlainBody();
-  const rawSender = message.getFrom().toLowerCase(); 
-  
-  // Extraction du domaine de l'expéditeur (ex: @talan.com)
-  const domainMatch = rawSender.match(/@([\w.-]+)/);
-  let domainSender = domainMatch ? domainMatch[1] : "";
-  // Nettoyage pour les outils comme SmartRecruiters
-  if (domainSender.includes("smartrecruiters")) domainSender = domainSender.split('.').slice(-2).join('.');
+  const snippet = body.substring(0, 100).replace(/\n/g, " "); // Bribe du mail pour les logs
 
-  const prompt = `Analyse ce mail. Est-ce une confirmation de candidature ?
-  Réponds en JSON :
-  {
-    "est_candidature": true/false,
-    "entreprise": "...",
-    "poste": "...",
-    "lieu": "...",
-    "lien": "cherche l'URL du bouton 'Accéder à ma candidature' ou 'Suivre ma candidature'"
+  console.log(`[SCAN] Sujet: "${subject}" | Expéditeur: ${rawSender}`);
+  console.log(`       |_ Bribe: "${snippet}..."`);
+
+  // 1. FILTRE BLACKLIST
+  if (CONFIG_S1.blacklist.some(b => rawSender.includes(b))) {
+    console.log(`| - [IGNORE] Blacklist détectée (${rawSender}). Pas de label posé.`);
+    return { succes: false };
   }
+
+  // 2. ANALYSE IA
+  const prompt = `Analyse ce mail. Est-ce une confirmation de candidature ?
+  Expéditeur : "${rawSender}" | Sujet : "${subject}"
+  Réponds en JSON :
+  {"est_candidature": true, "entreprise": "...", "poste": "...", "lieu": "...", "lien": "URL"}
   Mail : ${body}`;
   
   const data = callGeminiCentral(prompt);
-  const safe = (val) => (val && val !== "null" && val !== "undefined") ? val.toString().trim() : "Inconnu";
-
-  if (data && data.est_candidature === true && data.entreprise && data.entreprise.toLowerCase() !== "inconnu") {
-    
-    let ligneExistante = -1;
-    const nomIA = data.entreprise.toLowerCase().trim();
-
-    // LOGIQUE DE MATCHING AMÉLIORÉE (Nom OU Domaine Email)
-    for (let i = 0; i < dataTableau.length; i++) {
-      const nomCell = dataTableau[i][0].toString().toLowerCase().trim();
-      if (nomCell === "") continue;
-
-      const matchNom = nomCell.includes(nomIA) || nomIA.includes(nomCell);
-      const matchDomaine = domainSender !== "" && domainSender.includes(nomCell) && !domainSender.includes("linkedin") && !domainSender.includes("gmail");
-
-      if (matchNom || matchDomaine) {
-        ligneExistante = i + 1;
-        break;
-      }
-    }
-
-    if (ligneExistante !== -1) {
-      // DOUBLON DÉTECTÉ -> ENRICHISSEMENT
-      console.log(`  |- [ENRICHIR] Doublon trouvé pour ${data.entreprise} ligne ${ligneExistante}`);
-      
-      // On ne remplace que si l'ancienne valeur était "Inconnu"
-      const currentValues = sheet.getRange(ligneExistante, 1, 1, 8).getValues()[0];
-      
-      if (currentValues[2] === "Inconnu" && safe(data.poste) !== "Inconnu") sheet.getRange(ligneExistante, 3).setValue(safe(data.poste));
-      if (currentValues[4] === "Inconnu" && safe(data.lieu) !== "Inconnu") sheet.getRange(ligneExistante, 5).setValue(safe(data.lieu));
-      if ((currentValues[7] === "Inconnu" || currentValues[7] === "" || currentValues[7] === "Ajouté par script") && safe(data.lien) !== "Inconnu") {
-        sheet.getRange(ligneExistante, 8).setValue(safe(data.lien));
-      }
-      
-      const ancienneRemarque = sheet.getRange(ligneExistante, 6).getValue();
-      sheet.getRange(ligneExistante, 6).setValue(ancienneRemarque + " | Infos enrichies par mail direct.");
-      
-      thread.addLabel(label);
-      return { succes: true, type: "enrichissement", info: `Enrichi: ${data.entreprise}` };
-
-    } else {
-      // NOUVEL AJOUT
-      const nextRow = sheet.getLastRow() + 1;
-      const dateC = Utilities.formatDate(message.getDate(), "GMT+1", "dd/MM/yyyy");
-      const formuleStatut = `=IF(G${nextRow}="oui"; IF(TODAY()-B${nextRow}>60; "Refusé"; "En attente"); "")`;
-
-      sheet.getRange(nextRow, 1, 1, 8).setValues([[
-        safe(data.entreprise), dateC, safe(data.poste), "", safe(data.lieu), "Ajouté par script", "oui", safe(data.lien)
-      ]]);
-      sheet.getRange(nextRow, 4).setFormula(formuleStatut);
-      
-      thread.addLabel(label);
-      return { succes: true, type: "ajout", info: `Ajouté: ${data.entreprise} (Ligne ${nextRow})` };
-    }
-  } else {
-    thread.addLabel(label);
+  if (!data || !data.est_candidature || !data.entreprise) {
+    console.log(`| - [IA] Verdict: Ce n'est pas une candidature valide.`);
     return { succes: false };
   }
+
+  // 3. MATCHING NORMALISÉ
+  let ligneExistante = -1;
+  const nomIA = normaliserS1(data.entreprise);
+  const domainSender = rawSender.match(/@([\w.-]+)/) ? rawSender.match(/@([\w.-]+)/)[1] : "";
+
+  for (let i = 0; i < dataTableau.length; i++) {
+    const nomCell = normaliserS1(dataTableau[i][0].toString());
+    if (nomCell === "") continue;
+
+    const matchNom = nomCell.includes(nomIA) || nomIA.includes(nomCell);
+    const matchDomaine = domainSender !== "" && domainSender.includes(nomCell) && !domainSender.includes("linkedin") && !domainSender.includes("gmail");
+
+    if (matchNom || matchDomaine) {
+      ligneExistante = i + 1;
+      console.log(`| - [LOGIQUE] Match trouvé pour "${data.entreprise}" (Ligne ${ligneExistante}) via ${matchDomaine ? 'Domaine' : 'Nom'}.`);
+      break;
+    }
+  }
+
+  const safe = (val) => (val && val !== "null" && val !== "undefined") ? val.toString().trim() : "Inconnu";
+
+  if (ligneExistante !== -1) {
+    // --- ENRICHISSEMENT ---
+    const current = dataTableau[ligneExistante-1];
+    let modifications = [];
+
+    if (current[2] === "Inconnu" && safe(data.poste) !== "Inconnu") {
+      sheet.getRange(ligneExistante, 3).setValue(safe(data.poste));
+      modifications.push("Poste");
+    }
+    if (current[4] === "Inconnu" && safe(data.lieu) !== "Inconnu") {
+      sheet.getRange(ligneExistante, 5).setValue(safe(data.lieu));
+      modifications.push("Lieu");
+    }
+    if ((current[7] === "" || current[7] === "Inconnu") && safe(data.lien) !== "Inconnu") {
+      sheet.getRange(ligneExistante, 8).setValue(safe(data.lien));
+      modifications.push("Lien");
+    }
+    
+    console.log(`| - [ACTION] Enrichissement effectué: ${modifications.length > 0 ? modifications.join(", ") : "Aucune info manquante"}`);
+    return { succes: true, type: "enrichissement", info: `Enrichi: ${data.entreprise}` };
+    
+  } else {
+    // --- NOUVEL AJOUT ---
+    const nextRow = sheet.getLastRow() + 1;
+    const dateC = Utilities.formatDate(message.getDate(), "GMT+1", "dd/MM/yyyy");
+    const formuleStatut = `=IF(G${nextRow}="oui"; IF(TODAY()-B${nextRow}>60; "Refusé"; "En attente"); "")`;
+
+    console.log(`| - [ACTION] Ajout d'une nouvelle ligne pour "${data.entreprise}" à la ligne ${nextRow}.`);
+    sheet.appendRow([safe(data.entreprise), dateC, safe(data.poste), "", safe(data.lieu), "Ajouté par script", "oui", safe(data.lien)]);
+    sheet.getRange(nextRow, 4).setFormula(formuleStatut);
+    
+    return { succes: true, type: "ajout", info: `Ajouté: ${data.entreprise}` };
+  }
+}
+
+/**
+ * UTILS : Normalisation (Minuscules, sans accents)
+ */
+function normaliserS1(t) {
+  if (!t) return "";
+  return t.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/(hiring team|team|group|sas|inc|corp|ltd)/gi, "")
+    .trim();
 }
