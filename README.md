@@ -2,98 +2,73 @@
 
 Ce projet automatise le suivi des candidatures dans Google Sheets avec **Google Apps Script + Gemini + Gmail + Google Calendar**.
 
-Il couvre 3 blocs :
-- détection des confirmations de candidature,
-- mise à jour des réponses RH (refus / entretien),
-- maintenance et journalisation.
+Il repose sur une logique de **"Zéro Pollution"** : le script n'écrit dans votre Sheet que s'il est sûr de l'entreprise, sinon il vous alerte par mail.
 
 ## 🛠️ Flux de travail pro (VS Code ↔ Google ↔ GitHub)
 
-Le cycle recommandé est le suivant :
-1. Développer en local dans VS Code.
-2. Synchroniser le code Apps Script avec `clasp`.
-3. Versionner le dossier local avec Git/GitHub.
+Le cycle recommandé pour maintenir le code :
 
-Commandes `clasp` essentielles :
+1. Développer en local dans VS Code.
+2. Synchroniser avec `clasp`.
+3. Versionner avec Git/GitHub.
 
 ```bash
 npm install -g @google/clasp
 clasp login
 clasp clone "ID_DU_SCRIPT"
-clasp pull
 clasp push
+
 ```
 
-## ✅ Fonctionnalités
+## ✅ Fonctionnalités Clés
 
-- **Ajout & enrichissement** : détecte les mails de confirmation de candidature, ajoute une ligne dans la feuille et enrichit les doublons.
-- **Mise à jour des réponses** : détecte les réponses RH, met à jour le statut et la date de réponse.
-- **Calendrier auto** : crée un événement Google Calendar en cas d’entretien avec date/heure détectées.
-- **Fallback IA** : marque les cas ambigus avec le label Gmail `IA-A-VÉRIFIER` + ligne de contrôle dans le sheet + mail d’alerte.
-- **Maintenance** : purge les logs vieux de plus de 30 jours.
+* **Ajout & Enrichissement (S1)** : Détecte les confirmations d'envoi. Si l'entreprise existe déjà, il complète les infos manquantes (Poste, Lien, Lieu) sans créer de doublon.
+* **Mise à jour Intelligente (S2)** : Détecte les réponses RH (Refus, Entretien, Accepté).
+* **Matching Normalisé** : Compare les noms en ignorant les accents, les majuscules et les suffixes (Hiring Team, SAS, etc.). Capable de lier "NPX" à "Nuclear Promise X".
+* **Anti-Pollution & Alerte** : Si une réponse est détectée mais que l'entreprise n'est pas dans le Sheet, le script envoie une **alerte mail directe** au lieu de polluer le tableau.
+* **Anti-Quota (Rate Limit)** : Intègre des pauses de sécurité (2s) et un filtrage par Blacklist JSON pour éviter l'erreur 429.
+* **Calendrier Auto** : Crée un événement Google Calendar avec le lien du mail en cas d'entretien.
 
-## 📁 Fichiers du projet (et rôle de chacun)
+## 📁 Fichiers du projet
 
-- `add_candidature.js` : script principal d’ajout (`analyserMailsCandidaturesEnvoyees`), collecte Gmail, extraction IA, anti-doublons, enrichissement de lignes.
-- `update_candidature.js` : script principal de mise à jour (`analyserMailsReponsesRecues`), analyse des réponses, statut, remarques, labels Gmail, création d’événements Calendar.
-- `api.js` : couche centralisée d’appel Gemini (`callGeminiCentral`), format JSON et gestion d’erreurs API.
-- `logger.js` : logger universel `writeLog` + utilitaire `construireResumeFinal`.
-- `logs.js` : logger complémentaire `enregistrerLog` pour écrire dans l’onglet `logs`.
-- `maintenance.js` : nettoyage automatique des anciennes lignes de logs.
-- `test_script1.js` : test d’insertion d’une candidature simulée via extraction IA.
-- `test_script2.js` : test de mise à jour de statut sur une ligne existante.
-- `appsscript.json` : manifeste Apps Script (timezone, runtime, logs d’exception).
-- `.clasp.json` : configuration locale `clasp` (id du script, extensions, rootDir).
+* `add_candidature.js` : (Script 1) Analyse les envois. Utilise la **Blacklist JSON** pour ignorer les pubs LinkedIn.
+* `update_candidature.js` : (Script 2) Analyse les réponses. Gère la **Triple Labellisation** Gmail.
+* `api.js` : Gestion centralisée des appels Gemini (IA).
+* `utils.js` : Fonctions partagées comme `normaliser()` (nettoyage des noms) et `nettoyerTexte()`.
+* `logger.js` & `logs.js` : Journalisation détaillée des décisions du script (Matching, Rejets, Actions).
+* `maintenance.js` : Nettoyage auto des logs (> 30 jours).
 
-## 📋 Prérequis
+## ⚙️ Configuration & Prérequis
 
-- Un compte Google (Gmail, Sheets, Calendar, Apps Script).
-- Node.js + `clasp`.
-- Une clé Gemini API.
-- Un dépôt GitHub (idéalement privé).
+### 1. Script Properties (Paramètres Google)
 
-## ⚙️ Configuration Google Sheet
+* `SHEET_NAME` : Nom de l'onglet (ex: `Candidatures`).
+* `GEMINI_KEY` : Votre clé API Google AI Studio.
+* `MODEL_NAME` : Modèle utilisé (ex: `gemini-1.5-flash`).
 
-Créer un onglet principal (ex: `Candidatures`) avec les colonnes :
-- A `Entreprise`
-- B `Date`
-- C `Poste`
-- D `Statut`
-- E `Lieu`
-- F `Remarques`
-- G `Relance`
-- H `Lien`
-- I `Date Réponse`
+### 2. Structure du Google Sheet
 
-Créer aussi un onglet `logs` avec l’en-tête :
-`Date | Heure | Fonction | Message | Erreur | Message d'erreur`
+L'onglet principal doit comporter les colonnes **A à I** :
+`Entreprise | Date | Poste | Statut | Lieu | Remarques | Relance | Lien | Date Réponse`
 
-## 🔐 Script Properties requises
+## 🏷️ Système de Labels Gmail
 
-Dans les paramètres du projet Apps Script, définir :
-- `SHEET_NAME` : nom de l’onglet principal (ex: `Candidatures`)
-- `GEMINI_KEY` : clé API Gemini utilisée par `api.js`
-- `MODEL_NAME` : modèle Gemini (ex: `gemini-1.5-flash`)
+Le script utilise une labellisation granulaire pour un suivi visuel dans Gmail :
 
-## ⏰ Triggers recommandés
+* **Ajout** : `IA-Candidature-Ajoutée`
+* **Résultats** : `IA-Réponse-Refusée`, `IA-Réponse-Entretien`, `IA-Réponse-En-Cours`, `IA-Réponse-Acceptée`
+* **Contrôle** : `IA-A-VÉRIFIER` (Cas ambigus)
 
-- `analyserMailsCandidaturesEnvoyees` : toutes les heures
-- `analyserMailsReponsesRecues` : toutes les 2 heures
-- `maintenanceNettoyageLogs` : 1 fois par jour
+## 🚨 Dépannage Rapide (FAQ)
 
-## 🏷️ Labels Gmail utilisés
+| Erreur | Cause possible | Solution |
+| --- | --- | --- |
+| **Erreur 429** | Trop de requêtes IA en une minute. | Vérifier que `Utilities.sleep(2000)` est bien présent dans la boucle. |
+| **Pas de mise à jour** | L'entreprise n'est pas en statut "En attente". | Le Script 2 ne traite QUE les lignes marquées "En attente". |
+| **Doublons** | Le nom de l'entreprise varie trop. | Vérifier la fonction `normaliser()` ou ajouter le nom de l'expéditeur manuellement. |
+| **Mails ignorés** | Adresse dans la Blacklist. | Vérifier la variable `CONFIG_FILTRES` dans le script. |
 
-- `IA-Candidature-Ajoutée`
-- `IA-Réponse-Traitée`
-- `IA-A-VÉRIFIER`
+## 🔒 Sécurité
 
-## 🔒 Sécurité & bonnes pratiques
-
-- Ne jamais écrire la clé Gemini en dur dans le code.
-- Utiliser uniquement les Script Properties pour les secrets.
-- Vérifier le contenu avant commit (`.clasp.json`, fichiers de test, etc.).
-- Conserver le dépôt GitHub en privé si possible.
-
----
-
-Si tu veux, je peux aussi ajouter une section **Dépannage rapide** (erreurs courantes + correctifs immédiats).
+* Dépôt GitHub **Privé** obligatoire (contient des patterns de vos candidatures).
+* Clés API stockées uniquement dans les **Script Properties** (jamais en dur dans le code).
