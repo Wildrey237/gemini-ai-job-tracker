@@ -1,44 +1,72 @@
 /**
- * SCRIPT 2 : Mise à jour, Sécurité Fallback et Gestion Calendrier
+ * CONFIGURATION DES FILTRES (Facile à modifier)
+ */
+const CONFIG_FILTRES = {
+  "blacklist_emails": [
+    "jobs-listings@linkedin.com",
+    "jobalerts-noreply@linkedin.com"
+  ]
+};
+
+/**
+ * SCRIPT 2 : Analyse des Réponses et Mise à jour du Suivi
  */
 function analyserMailsReponsesRecues() {
   const nomF = "update_candidature";
   const props = PropertiesService.getScriptProperties();
   const nomSheet = props.getProperty('SHEET_NAME');
   
-  let stats = { emailsVus: 0, count: 0, details: [] };
+  let stats = { emailsScannes: 0, majEffectuees: 0, alertesEnvoyees: 0, details: [] };
   let alertesManuelles = [];
 
-  console.log(">>> [DEBUT] Lancement de l'analyse globale...");
+  console.log(">>> [DEBUT] Lancement du chasseur de réponses (V3 - Blacklist & Flush)...");
 
   try {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = ss.getSheetByName(nomSheet);
     if (!sheet) throw new Error(`Feuille ${nomSheet} introuvable.`);
 
-    // --- CORRECTION : La fonction collecterEmailsATraiter est définie plus bas ---
-    const threads = collecterEmailsATraiter();
-    stats.emailsVus = threads.length;
-
-    if (stats.emailsVus > 0) {
-      const dataTableau = sheet.getRange(1, 1, sheet.getLastRow(), 1).getValues();
-
-      threads.forEach((thread) => {
-        const resultat = traiterUnFil(thread, sheet, dataTableau);
-        
-        if (resultat.succes) {
-          stats.count++;
-          stats.details.push(resultat.info);
-        } else if (resultat.erreurIA || resultat.nonTrouve) {
-          alertesManuelles.push(resultat.info);
-          stats.details.push(`⚠️ ${resultat.info}`);
-        }
-      });
+    // 1. DATA : Récupérer les entreprises "En attente" (Colonne A et D)
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      console.log("[DATA] Sheet vide ou seulement en-têtes. Fin.");
+      return;
     }
 
-    const resume = construireResumeFinal("Mise à jour", stats);
-    console.log(">>> [LOG EXCEL] : " + resume);
-    enregistrerLog(nomF, resume, false, "");
+    const fullData = sheet.getRange(1, 1, lastRow, 9).getValues();
+    const entreprisesEnAttente = fullData
+      .map((row, index) => ({ nom: row[0].toString().trim(), statut: row[3], ligne: index + 1 }))
+      .filter(item => (item.statut === "En attente" || item.statut === "") && item.nom !== "" && item.nom !== "Entreprise");
+
+    console.log(`[DATA] ${entreprisesEnAttente.length} entreprises "En attente" détectées.`);
+
+    // 2. COLLECTE : Recherche Gmail avec exclusion des labels existants
+    const threads = collecterEmailsFiltres(entreprisesEnAttente);
+    stats.emailsScannes = threads.length;
+
+    if (stats.emailsScannes > 0) {
+      for (const thread of threads) {
+        // PAUSE DE SÉCURITÉ (Anti-429)
+        Utilities.sleep(2000); 
+
+        const resultat = traiterUnFilOptimise(thread, sheet, entreprisesEnAttente);
+        
+        if (resultat && resultat.succes) {
+          stats.majEffectuees++;
+          stats.details.push(`✅ ${resultat.info}`);
+          // FORCE L'ECRITURE DANS LE SHEET IMMEDIATEMENT
+          SpreadsheetApp.flush(); 
+        } else if (resultat && resultat.alerteMail) {
+          stats.alertesEnvoyees++;
+          alertesManuelles.push(resultat.info);
+          stats.details.push(`📩 Alerte : ${resultat.info}`);
+        }
+      }
+    }
+
+    const resume = `Scan: ${stats.emailsScannes} | MàJ: ${stats.majEffectuees} | Alertes: ${stats.alertesEnvoyees}`;
+    console.log(">>> [RESUME FINAL] : " + resume);
+    enregistrerLog(nomF, resume, false, stats.details.join("\n"));
 
     if (alertesManuelles.length > 0) {
       envoyerMailAlerteGroupee(alertesManuelles);
@@ -46,129 +74,134 @@ function analyserMailsReponsesRecues() {
 
   } catch (e) {
     console.error("!!! [ERREUR] : " + e.toString());
-    // Vérifie si la fonction enregistrerLog existe dans ton fichier de logs
     if (typeof enregistrerLog === "function") {
-      enregistrerLog(nomF, "Échec du scan", true, e.toString());
+      enregistrerLog(nomF, "ERREUR EXECUTION", true, e.toString());
     }
   }
 }
 
 /**
- * FONCTION DE COLLECTE (Celle qui manquait)
+ * COLLECTE : Filtre Gmail (7 jours pour tests)
  */
-function collecterEmailsATraiter() {
-  console.log("[COLLECTE] Recherche Gmail en cours...");
-  const labelSource = "IA-Candidature-Ajoutée";
-  const labelTraite = "IA-Réponse-Traitée";
+function collecterEmailsFiltres(entreprises) {
+  const periode = "7d"; // MODIFIER ICI : "2d" pour la prod
+  const labelAjoute = "IA-Candidature-Ajoutée";
+  const labelsResultats = '(-label:IA-Réponse-Refusée -label:IA-Réponse-Entretien -label:IA-Réponse-En-Cours -label:IA-Réponse-Acceptée)';
   
-  const keywords = '(entretien OR interview OR invitation OR "follow up" OR "next steps" OR application OR candidacy OR candidature OR "hiring process" OR "moving forward")';
-  
-  const queryFils = `label:${labelSource} -label:${labelTraite}`;
-  const queryRH = `newer_than:2d -label:${labelSource} -label:${labelTraite} ${keywords}`;
+  const listeNoms = entreprises.map(e => `"${e.nom}"`).join(" OR ");
+  const query = `newer_than:${periode} -label:${labelAjoute} ${labelsResultats} (${listeNoms})`;
 
-  const threadsFils = GmailApp.search(queryFils);
-  const threadsRH = GmailApp.search(queryRH);
-  
-  const allThreads = threadsFils.concat(threadsRH);
-  return allThreads.filter((t, i) => allThreads.findIndex(t2 => t2.getId() === t.getId()) === i);
+  console.log(`[QUERY GMAIL] : ${query}`);
+  return GmailApp.search(query, 0, 15);
 }
 
 /**
- * SOUS-FONCTION : Analyse, Mise à jour et Calendrier
+ * SOUS-FONCTION : Analyse et Matching avec Blacklist
  */
-function traiterUnFil(thread, sheet, dataTableau) {
+function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente) {
   const messages = thread.getMessages();
   const lastMessage = messages[messages.length - 1];
+  const emailExpediteur = lastMessage.getFrom().toLowerCase();
   const sujet = lastMessage.getSubject();
-  const corpsMail = lastMessage.getPlainBody();
-  
-  const labelTraite = GmailApp.getUserLabelByName("IA-Réponse-Traitée") || GmailApp.createLabel("IA-Réponse-Traitée");
-  const labelAlerte = GmailApp.getUserLabelByName("IA-A-VÉRIFIER") || GmailApp.createLabel("IA-A-VÉRIFIER");
+  const corps = lastMessage.getPlainBody();
 
-  if (messages.length < 2 && !sujet.toLowerCase().includes("re:")) return { succes: false };
-
-  // A. ANALYSE VERDICT
-  console.log(`  |- Analyse IA pour : ${sujet}`);
-  const prompt = `Analyse ce mail. Identifie l'entreprise et le verdict ("Refusé" ou "Entretien"). Réponds en JSON : {"entreprise": "nom", "verdict": "statut", "details": "..."}. Mail : ${corpsMail}`;
-  const analyse = callGeminiCentral(prompt);
-
-  if (!analyse || !analyse.entreprise || analyse.entreprise === "Inconnu") {
-    thread.addLabel(labelAlerte);
-    ajouterLigneTemporaire(sheet, "A VERIFIER (IA ECHEC)", sujet, "#fff3cd");
-    return { succes: false, erreurIA: true, info: `Analyse échouée (${sujet})` };
+  // --- FILTRE : BLACKLIST JSON ---
+  const estBlackliste = CONFIG_FILTRES.blacklist_emails.some(email => emailExpediteur.includes(email.toLowerCase()));
+  if (estBlackliste) {
+    console.log(`| - [SKIP] Blacklist détectée : ${emailExpediteur}`);
+    return { succes: false };
   }
 
-  // B. MATCHING
-  let ligneIndex = -1;
-  const nomIA = analyse.entreprise.toLowerCase().trim();
-  for (let i = 0; i < dataTableau.length; i++) {
-    const nomCell = dataTableau[i][0].toString().toLowerCase().trim();
-    if (nomCell !== "" && (nomCell.includes(nomIA) || nomIA.includes(nomCell))) {
-      ligneIndex = i + 1;
+  console.log(`[ANALYSE] Mail de : ${emailExpediteur} | Sujet : ${sujet}`);
+
+  // A. IA : Extraction du Verdict
+  const prompt = `Analyse ce mail de recrutement. 
+  1. Identifie l'entreprise (ignore les plateformes type LinkedIn). 
+  2. Verdict : "Refusé", "Entretien", "Accepté" ou "En cours".
+  Expéditeur : ${emailExpediteur} | Sujet : ${sujet}
+  Mail : ${corps}
+  Réponds UNIQUEMENT en JSON : {"entreprise": "Nom", "verdict": "Statut", "details": "Résumé court"}`;
+
+  const analyse = callGeminiCentral(prompt);
+  if (!analyse || !analyse.entreprise) return { succes: false };
+
+  // B. MATCHING NORMALISÉ (Sans accents)
+  let cible = null;
+  const nomIA = normaliser(analyse.entreprise);
+  const sujetN = normaliser(sujet);
+  const expN = normaliser(emailExpediteur);
+
+  for (let item of entreprisesEnAttente) {
+    const nomS = normaliser(item.nom);
+    
+    // Comparaison croisée
+    const match = nomIA.includes(nomS) || nomS.includes(nomIA) || sujetN.includes(nomS) || expN.includes(nomS);
+    
+    if (match) {
+      cible = item;
+      console.log(`| - [DEBUG] MATCH TROUVÉ : IA("${analyse.entreprise}") <-> Sheet("${item.nom}")`);
       break;
     }
   }
 
-  // C. ACTIONS SI MATCH
-  if (ligneIndex !== -1) {
-    const dateJour = Utilities.formatDate(new Date(), "GMT+1", "dd/MM/yyyy");
-    sheet.getRange(ligneIndex, 4).setValue(analyse.verdict);
-    sheet.getRange(ligneIndex, 9).setValue(dateJour);
-    
-    const ancienneRemarque = sheet.getRange(ligneIndex, 6).getValue();
-    let nouvelleRemarque = `[${dateJour}] ${analyse.details}`;
+  const dateJ = Utilities.formatDate(new Date(), "GMT+1", "dd/MM/yyyy");
 
-    if (analyse.verdict.includes("Entretien")) {
-      const rdvInfo = extraireDateCalendrier(corpsMail);
-      if (rdvInfo && rdvInfo.date !== "inconnu") {
-        creerEvenementCalendrier(analyse.entreprise, rdvInfo, thread.getPermalink());
-        nouvelleRemarque += ` | 📅 RDV : ${rdvInfo.date} à ${rdvInfo.heure}`;
+  // C. ACTIONS
+  if (cible) {
+    // 1. MISE À JOUR SHEET
+    sheet.getRange(cible.ligne, 4).setValue(analyse.verdict);
+    sheet.getRange(cible.ligne, 9).setValue(dateJ);
+    
+    let note = `[${dateJ}] ${analyse.details}`;
+    
+    if (analyse.verdict === "Entretien") {
+      const rdv = extraireDateCalendrier(corps);
+      if (rdv && rdv.date !== "inconnu") {
+        creerEvenementCalendrier(analyse.entreprise, rdv, thread.getPermalink());
+        note += ` | 📅 RDV : ${rdv.date} à ${rdv.heure}`;
       }
+      sheet.getRange(cible.ligne, 1, 1, 9).setBackground("#cfe2ff");
+    } else if (analyse.verdict === "Refusé") {
+      sheet.getRange(cible.ligne, 1, 1, 9).setBackground("#f8d7da");
+    } else if (analyse.verdict === "Accepté") {
+      sheet.getRange(cible.ligne, 1, 1, 9).setBackground("#d4edda");
     }
 
-    sheet.getRange(ligneIndex, 6).setValue(ancienneRemarque ? `${ancienneRemarque} | ${nouvelleRemarque}` : nouvelleRemarque);
-    sheet.getRange(ligneIndex, 1, 1, 9).setBackground(analyse.verdict.includes("Entretien") ? "#cfe2ff" : "#f8d7da");
+    const oldNote = sheet.getRange(cible.ligne, 6).getValue();
+    sheet.getRange(cible.ligne, 6).setValue(oldNote ? `${oldNote} | ${note}` : note);
     
-    thread.addLabel(labelTraite);
-    return { succes: true, info: `${analyse.entreprise} (Ligne ${ligneIndex})` };
+    // 2. LABELS GMAIL
+    appliquerLabelVerdict(thread, analyse.verdict);
+    
+    return { succes: true, info: `${analyse.entreprise} (Match Ligne ${cible.ligne})` };
   } else {
-    thread.addLabel(labelAlerte);
-    ajouterLigneTemporaire(sheet, analyse.entreprise, `Non trouvé. Verdict: ${analyse.verdict}`, "#f8d7da");
-    return { succes: false, nonTrouve: true, info: `${analyse.entreprise} (Non trouvé)` };
+    // 3. ALERTE MAIL
+    return { alerteMail: true, info: `Entreprise: ${analyse.entreprise} | Verdict: ${analyse.verdict} | Lien: ${thread.getPermalink()}` };
   }
 }
 
 /**
- * HELPERS
+ * UTILS : Normalisation (Minuscules, sans accents, sans mots parasites)
  */
-function extraireDateCalendrier(corps) {
-  const prompt = `Extrais la date et l'heure d'entretien. Réponds UNIQUEMENT en JSON : {"date": "YYYY-MM-DD", "heure": "HH:MM", "duree": 60}. Si pas de date précise, {"date": "inconnu"}. Mail : ${corps}`;
-  return callGeminiCentral(prompt);
+function normaliser(t) {
+  if (!t) return "";
+  return t.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // Supprime les accents
+    .replace(/(hiring team|team|group|sas|inc|corp|ltd|re:|fwd:)/gi, "")
+    .replace(/[^\w\s]/gi, "")
+    .trim();
 }
 
-function creerEvenementCalendrier(entreprise, rdv, mailLink) {
-  try {
-    const start = new Date(`${rdv.date}T${rdv.heure}:00`);
-    const end = new Date(start.getTime() + (rdv.duree || 60) * 60000);
-    CalendarApp.getDefaultCalendar().createEvent(
-      `Entretien : ${entreprise}`,
-      start,
-      end,
-      { description: `Lien vers le mail : ${mailLink}`, location: entreprise }
-    );
-  } catch(e) { console.error("Erreur Calendrier: " + e); }
-}
-
-function ajouterLigneTemporaire(sheet, entreprise, note, couleur) {
-  const row = sheet.getLastRow() + 1;
-  sheet.appendRow([entreprise, "", "", "A VERIFIER", "", note, "non", ""]);
-  sheet.getRange(row, 1, 1, 8).setBackground(couleur);
+function appliquerLabelVerdict(thread, verdict) {
+  let nom = "IA-Réponse-En-Cours";
+  if (verdict === "Refusé") nom = "IA-Réponse-Refusée";
+  if (verdict === "Entretien") nom = "IA-Réponse-Entretien";
+  if (verdict === "Accepté") nom = "IA-Réponse-Acceptée";
+  const label = GmailApp.getUserLabelByName(nom) || GmailApp.createLabel(nom);
+  thread.addLabel(label);
 }
 
 function envoyerMailAlerteGroupee(alertes) {
-  const destinataire = Session.getActiveUser().getEmail();
-  const corps = "Bonjour,\n\nLe script a détecté des réponses à vérifier :\n\n- " + 
-                alertes.join("\n- ") + 
-                "\n\nLignes ajoutées en bas du tableau.";
-  MailApp.sendEmail(destinataire, "⚠️ Action requise : Réponses candidatures", corps);
+  const corps = "Bonjour,\n\nDes réponses ont été détectées mais n'ont pas pu être liées à une ligne 'En attente' :\n\n- " + alertes.join("\n- ");
+  MailApp.sendEmail(Session.getActiveUser().getEmail(), "⚠️ Alerte : Réponses RH (Matching échoué)", corps);
 }
