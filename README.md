@@ -1,15 +1,15 @@
-# 🚀 AI Job Tracker - Automatisation du suivi de candidatures
+# 🚀 AI Job Tracker - Automatisation du suivi & Sourcing de candidatures
 
-Ce projet automatise le suivi des candidatures dans Google Sheets avec **Google Apps Script + Gemini + Gmail + Google Calendar**.
+Ce projet est un ecosystème complet pour gerer votre recherche d'emploi directement depuis Google Sheets. Il utilise **Google Apps Script + Gemini (1.5 Flash) + Gmail + Google Calendar**.
 
-Il repose sur une logique de **"Zéro Pollution"** : le script n'écrit dans votre Sheet que s'il est sûr de l'entreprise, sinon il vous alerte par mail.
+Il repose sur une logique de **"Zero Pollution"** et d'**"Inbox Zero"** : le script archive et trie vos mails automatiquement tout en extrayant les donnees strategiques.
 
 ## 🛠️ Flux de travail pro (VS Code ↔ Google ↔ GitHub)
 
-Le cycle recommandé pour maintenir le code :
+Le cycle recommande pour maintenir le projet :
 
-1. Développer en local dans VS Code.
-2. Synchroniser avec `clasp`.
+1. Developper en local dans VS Code.
+2. Synchroniser avec `clasp` (`clasp push`).
 3. Versionner avec Git/GitHub.
 
 ```bash
@@ -17,58 +17,58 @@ npm install -g @google/clasp
 clasp login
 clasp clone "ID_DU_SCRIPT"
 clasp push
-
 ```
 
-## ✅ Fonctionnalités Clés
+## ✅ Fonctionnalites Cles
 
-* **Ajout & Enrichissement (S1)** : Détecte les confirmations d'envoi. Si l'entreprise existe déjà, il complète les infos manquantes (Poste, Lien, Lieu) sans créer de doublon.
-* **Mise à jour Intelligente (S2)** : Détecte les réponses RH (Refus, Entretien, Accepté).
-* **Matching Normalisé** : Compare les noms en ignorant les accents, les majuscules et les suffixes (Hiring Team, SAS, etc.). Capable de lier "NPX" à "Nuclear Promise X".
-* **Anti-Pollution & Alerte** : Si une réponse est détectée mais que l'entreprise n'est pas dans le Sheet, le script envoie une **alerte mail directe** au lieu de polluer le tableau.
-* **Anti-Quota (Rate Limit)** : Intègre des pauses de sécurité (2s) et un filtrage par Blacklist JSON pour éviter l'erreur 429.
-* **Calendrier Auto** : Crée un événement Google Calendar avec le lien du mail en cas d'entretien.
+- **Ajout & Enrichissement (S1)** : Detecte vos envois. Si l'entreprise existe deja, il complete les infos (Poste, Lien, Lieu).
+- **Mise a jour Intelligente (S2)** : Analyse les reponses RH (Refus, Entretien, Acceptation) et met a jour le statut et la couleur de la ligne.
+- **Sourcing Universel (S3)** : Scanne vos newsletters (LinkedIn, Glassdoor, etc.), extrait plusieurs offres par mail, et les classe par pertinence semantique.
+- **Matching Normalise & Bilingue** : Gere les noms d'entreprises complexes (ex: `NPX` vs `Nuclear Promise X`) et comprend les mails en Francais et Anglais.
+- **Formatage "Bouton"** : Les liens vers les offres sont inseres via la formule `=LIEN_HYPERTEXTE(...)` pour un tableau propre et cliquable.
+- **Calendrier Auto** : Cree un evenement Google Calendar avec le lien du mail en cas d'entretien detecte.
 
 ## 📁 Fichiers du projet
 
-* `add_candidature.js` : (Script 1) Analyse les envois. Utilise la **Blacklist JSON** pour ignorer les pubs LinkedIn.
-* `update_candidature.js` : (Script 2) Analyse les réponses. Gère la **Triple Labellisation** Gmail.
-* `api.js` : Gestion centralisée des appels Gemini (IA).
-* `utils.js` : Fonctions partagées comme `normaliser()` (nettoyage des noms) et `nettoyerTexte()`.
-* `logger.js` & `logs.js` : Journalisation détaillée des décisions du script (Matching, Rejets, Actions).
-* `maintenance.js` : Nettoyage auto des logs (> 30 jours).
+- `add_candidature.js` : (S1) Analyse les confirmations d'envoi.
+- `update_candidature.js` : (S2) Traite les reponses RH et gere la triple labellisation.
+- `sourcing_jobs.js` : (S3) Nouveau. Aspire les newsletters selon vos criteres (Cibles, Contrats, Competences).
+- `utils.js` : Cerveau utilitaire. Centralise `normaliserTexte()`, `safeValue()`, et la gestion des labels.
+- `api.js` : Gestion centralisee des appels vers Gemini.
+- `logger.js` : Journalisation des decisions (Matching, Rejets, Actions).
 
-## ⚙️ Configuration & Prérequis
+## ⚙️ Configuration & Prerequis
 
-### 1. Script Properties (Paramètres Google)
+### 1. Script Properties (Parametres Google)
 
-* `SHEET_NAME` : Nom de l'onglet (ex: `Candidatures`).
-* `GEMINI_KEY` : Votre clé API Google AI Studio.
-* `MODEL_NAME` : Modèle utilisé (ex: `gemini-1.5-flash`).
+- `SHEET_NAME` : Nom de l'onglet de suivi (ex: `ing3`).
+- `SHEET_NEWSLETTER_CONFIG` : Nom de l'onglet de configuration (ex: `config`).
+- `GEMINI_KEY` : Votre cle API Google AI Studio.
+- `MODEL_NAME` : `gemini-1.5-flash`.
 
-### 2. Structure du Google Sheet
+### 2. Onglet `config` (Pilotage sans code)
 
-L'onglet principal doit comporter les colonnes **A à I** :
-`Entreprise | Date | Poste | Statut | Lieu | Remarques | Relance | Lien | Date Réponse`
+L'onglet `config` permet de personnaliser la recherche sans toucher au script.
 
-## 🏷️ Système de Labels Gmail
+Colonnes recommandees :
+`Cibles Metiers | Types de Contrat | Competences | Emails Newsletters | Flexibilite (Strict/Flexible)`
 
-Le script utilise une labellisation granulaire pour un suivi visuel dans Gmail :
+## 🏷️ Systeme de Labels Gmail
 
-* **Ajout** : `IA-Candidature-Ajoutée`
-* **Résultats** : `IA-Réponse-Refusée`, `IA-Réponse-Entretien`, `IA-Réponse-En-Cours`, `IA-Réponse-Acceptée`
-* **Contrôle** : `IA-A-VÉRIFIER` (Cas ambigus)
+- **Candidatures** : `IA-Candidature-Ajoutee`
+- **Reponses** : `IA-Reponse-Refusee`, `IA-Reponse-Entretien`, `IA-Reponse-Acceptee`
+- **Sourcing** : `Newslatter-jobs-extraites` (archive automatiquement le mail apres lecture)
 
-## 🚨 Dépannage Rapide (FAQ)
+## 🚨 Depannage Rapide (FAQ)
 
 | Erreur | Cause possible | Solution |
 | --- | --- | --- |
-| **Erreur 429** | Trop de requêtes IA en une minute. | Vérifier que `Utilities.sleep(2000)` est bien présent dans la boucle. |
-| **Pas de mise à jour** | L'entreprise n'est pas en statut "En attente". | Le Script 2 ne traite QUE les lignes marquées "En attente". |
-| **Doublons** | Le nom de l'entreprise varie trop. | Vérifier la fonction `normaliser()` ou ajouter le nom de l'expéditeur manuellement. |
-| **Mails ignorés** | Adresse dans la Blacklist. | Vérifier la variable `CONFIG_FILTRES` dans le script. |
+| **Erreur 429** | Trop de requetes IA. | Le script inclut `Utilities.sleep(2000)` par defaut. |
+| **Lien illisible** | URL trop longue. | Le script utilise `=LIEN_HYPERTEXTE(URL; "Acceder au lien")`. |
+| **Offre ignoree (S3)** | Type de contrat non liste. | Le filtrage des contrats est `Strict` pour eviter les CDI si vous cherchez un stage. |
+| **Doublons** | Entreprise deja listee. | Le script verifie les 100 dernieres lignes avant toute insertion. |
 
-## 🔒 Sécurité
+## 🔒 Securite
 
-* Dépôt GitHub **Privé** obligatoire (contient des patterns de vos candidatures).
-* Clés API stockées uniquement dans les **Script Properties** (jamais en dur dans le code).
+- Depot GitHub prive recommande.
+- Cles API stockees uniquement dans les Script Properties.
