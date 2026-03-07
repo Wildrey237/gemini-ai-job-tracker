@@ -7,7 +7,7 @@
 function analyserNewslettersOpportunites() {
   const nomF = "sourcing_jobs";
   const props = PropertiesService.getScriptProperties();
-  const nomSheetDest = props.getProperty('SHEET_NAME');
+  const nomSheetDest = props.getProperty('SHEET_NEWSLETTER');
   const nomSheetConfig = props.getProperty('SHEET_NEWSLETTER_CONFIG');
   
   let stats = { mailsTraites: 0, offresAjoutees: 0, details: [] };
@@ -91,7 +91,7 @@ function recupererConfiguration(sheet) {
 function collecterMailsNewsletters(emails) {
   const queryEmails = emails.map(e => `from:${e}`).join(" OR ");
   const labelExclu = "Newslatter-jobs-extraites";
-  const query = `newer_than:3d -label:${labelExclu} (${queryEmails})`;
+  const query = `newer_than:1d -label:${labelExclu} (${queryEmails})`;
 
   console.log(`[QUERY GMAIL] : ${query}`);
   return GmailApp.search(query, 0, 10); // Limite à 10 threads pour éviter les timeouts
@@ -133,7 +133,7 @@ function traiterUneNewsletter(thread, sheetDest, config) {
       
       // --- NOUVEAU FORMATAGE DU LIEN ---
       const urlPropre = safeValue(offre.lien);
-      const formuleLien = `=LIEN_HYPERTEXTE("${urlPropre}"; "Accéder au lien")`;
+      const formuleLien = `=HYPERLINK("${urlPropre}"; "Accéder au lien")`;
       
       sheetDest.appendRow([
         safeValue(offre.entreprise), 
