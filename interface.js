@@ -20,14 +20,14 @@ function onOpen() {
     if (hasKey) {
         menu.addItem('❌ Supprimer ma Clé API', 'uiSupprimerCleAPI');
     } else {
-        menu.addItem('🔑 1. Configurer ma Clé API', 'uiDemanderCleAPI');
+        menu.addItem('🔑 Configurer ma Clé API', 'uiDemanderCleAPI');
     }
 
     // 2. GESTION DYNAMIQUE DE L'AUTOMATISATION
     if (hasTriggers) {
         menu.addItem('🚫 Désactiver l\'automatisation', 'uiSupprimerAutomatisation');
     } else {
-        menu.addItem('⏰ 2. Activer l\'automatisation', 'uiInstallerAutomatisation');
+        menu.addItem('⏰ Activer l\'automatisation', 'uiInstallerAutomatisation');
     }
 
     menu.addSeparator()
