@@ -1,74 +1,66 @@
-# 🚀 AI Job Tracker - Automatisation du suivi & Sourcing de candidatures
+# 🚀 AI Job Tracker - Écosystème de Suivi & Sourcing Intelligent
 
-Ce projet est un ecosystème complet pour gerer votre recherche d'emploi directement depuis Google Sheets. Il utilise **Google Apps Script + Gemini (1.5 Flash) + Gmail + Google Calendar**.
+Ce projet transforme votre Google Sheets en un véritable **ATS (Applicant Tracking System)** personnel. Propulsé par **Gemini 1.5 Flash**, il automatise la lecture de vos emails Gmail pour suivre vos candidatures et dénicher de nouvelles opportunités.
 
-Il repose sur une logique de **"Zero Pollution"** et d'**"Inbox Zero"** : le script archive et trie vos mails automatiquement tout en extrayant les donnees strategiques.
+## ✨ Nouvelles Fonctionnalités (V2.0)
 
-## 🛠️ Flux de travail pro (VS Code ↔ Google ↔ GitHub)
+* **Interface "Smart Menu"** : Un menu dédié dans Google Sheets qui s'adapte en temps réel (affiche "Activer" ou "Désactiver" selon l'état du script).
+* **Onboarding Automatique** : À l'ouverture, le script détecte si une configuration est manquante et guide l'utilisateur pas à pas (Fenêtre d'instructions pour la clé API).
+* **Système de Logs avec Tags** : Un onglet `logs` dédié qui trace chaque action avec des étiquettes claires (`CONFIG`, `UI_ACTION`, `ERREUR`, `AI_PROCESS`).
+* **Verrouillage de Sécurité** : Empêche les exécutions simultanées pour éviter de corrompre les données ou de doubler les appels API.
 
-Le cycle recommande pour maintenir le projet :
+## 🛠️ Installation Rapide (Pour vos amis)
 
-1. Developper en local dans VS Code.
-2. Synchroniser avec `clasp` (`clasp push`).
-3. Versionner avec Git/GitHub.
+1. **Copier le fichier** : `Fichier > Créer une copie` du Google Sheet Master.
+2. **Autoriser** : Allez dans `Extensions > Apps Script`, sélectionnez `onOpen` et cliquez sur **Exécuter**. Acceptez les autorisations Google.
+3. **Configurer** : Revenez sur le Sheet. Le menu **🚀 AI Job Tracker** apparaît.
+* Cliquez sur `🔑 1. Configurer ma Clé API` (Lien direct : [Google AI Studio - API Keys](https://aistudio.google.com/api-keys)).
+* Cliquez sur `⏰ 2. Activer l'automatisation`.
 
-```bash
-npm install -g @google/clasp
-clasp login
-clasp clone "ID_DU_SCRIPT"
-clasp push
-```
 
-## ✅ Fonctionnalites Cles
 
-- **Ajout & Enrichissement (S1)** : Detecte vos envois. Si l'entreprise existe deja, il complete les infos (Poste, Lien, Lieu).
-- **Mise a jour Intelligente (S2)** : Analyse les reponses RH (Refus, Entretien, Acceptation) et met a jour le statut et la couleur de la ligne.
-- **Sourcing Universel (S3)** : Scanne vos newsletters (LinkedIn, Glassdoor, etc.), extrait plusieurs offres par mail, et les classe par pertinence semantique.
-- **Matching Normalise & Bilingue** : Gere les noms d'entreprises complexes (ex: `NPX` vs `Nuclear Promise X`) et comprend les mails en Francais et Anglais.
-- **Formatage "Bouton"** : Les liens vers les offres sont inseres via la formule `=LIEN_HYPERTEXTE(...)` pour un tableau propre et cliquable.
-- **Calendrier Auto** : Cree un evenement Google Calendar avec le lien du mail en cas d'entretien detecte.
+## ✅ Fonctionnalités Cœurs
 
-## 📁 Fichiers du projet
+* **Sourcing Universel (S3)** : Aspire les newsletters (LinkedIn, Welcome to the Jungle, etc.) et extrait les offres correspondant à vos critères.
+* **Ajout & Enrichissement (S1)** : Détecte vos confirmations d'envoi et remplit automatiquement le tableau.
+* **Mise à jour Intelligente (S2)** : Analyse les réponses RH. En cas d'entretien, crée un événement dans **Google Calendar** avec le lien du mail d'origine.
+* **Logic de Matching** : Gère les noms d'entreprises complexes et nettoie les doublons sur les 100 dernières lignes.
 
-- `add_candidature.js` : (S1) Analyse les confirmations d'envoi.
-- `update_candidature.js` : (S2) Traite les reponses RH et gere la triple labellisation.
-- `sourcing_jobs.js` : (S3) Nouveau. Aspire les newsletters selon vos criteres (Cibles, Contrats, Competences).
-- `utils.js` : Cerveau utilitaire. Centralise `normaliserTexte()`, `safeValue()`, et la gestion des labels.
-- `api.js` : Gestion centralisee des appels vers Gemini.
-- `logger.js` : Journalisation des decisions (Matching, Rejets, Actions).
+## 📁 Structure du Projet
 
-## ⚙️ Configuration & Prerequis
+* `ui.gs` : **(Nouveau)** Gestion de l'interface, du menu dynamique et de l'onboarding.
+* `logs.gs` : **(Nouveau)** Moteur de journalisation centralisé avec gestion des tags.
+* `sourcing_jobs.js` : Extraction multi-offres depuis les newsletters.
+* `add_candidature.js` : Analyse des mails sortants (confirmations).
+* `update_candidature.js` : Traitement des mails entrants (réponses RH).
+* `api.js` : Connecteur sécurisé vers Gemini 1.5 Flash.
 
-### 1. Script Properties (Parametres Google)
+## ⚙️ Configuration (Script Properties)
 
-- `SHEET_NAME` : Nom de l'onglet de suivi (ex: `ing3`).
-- `SHEET_NEWSLETTER_CONFIG` : Nom de l'onglet de configuration (ex: `config`).
-- `GEMINI_KEY` : Votre cle API Google AI Studio.
-- `MODEL_NAME` : `gemini-1.5-flash`.
+Le script utilise les **Propriétés du déclencheur** pour stocker les informations sensibles :
 
-### 2. Onglet `config` (Pilotage sans code)
+* `GEMINI_KEY` : Votre clé API secrète.
+* `TRIGGERS_ACTIVATED` : État de l'automatisation (`true`/`false`).
+* `IS_RUNNING` : Verrou de sécurité pour éviter les collisions.
 
-L'onglet `config` permet de personnaliser la recherche sans toucher au script.
+## 🏷️ Système de Labels Gmail
 
-Colonnes recommandees :
-`Cibles Metiers | Types de Contrat | Competences | Emails Newsletters | Flexibilite (Strict/Flexible)`
+Le script organise votre boîte mail automatiquement pour atteindre l'**Inbox Zero** :
 
-## 🏷️ Systeme de Labels Gmail
+* `IA-Candidature-Ajoutee` : Traité par le S1.
+* `IA-Reponse-Entretien` / `IA-Reponse-Refusee` : Traité par le S2.
+* `Newslatter-jobs-extraites` : Traité par le S3 (Archive le mail après lecture).
 
-- **Candidatures** : `IA-Candidature-Ajoutee`
-- **Reponses** : `IA-Reponse-Refusee`, `IA-Reponse-Entretien`, `IA-Reponse-Acceptee`
-- **Sourcing** : `Newslatter-jobs-extraites` (archive automatiquement le mail apres lecture)
+## 🚨 Dépannage (FAQ)
 
-## 🚨 Depannage Rapide (FAQ)
-
-| Erreur | Cause possible | Solution |
+| Problème | Cause | Solution |
 | --- | --- | --- |
-| **Erreur 429** | Trop de requetes IA. | Le script inclut `Utilities.sleep(2000)` par defaut. |
-| **Lien illisible** | URL trop longue. | Le script utilise `=LIEN_HYPERTEXTE(URL; "Acceder au lien")`. |
-| **Offre ignoree (S3)** | Type de contrat non liste. | Le filtrage des contrats est `Strict` pour eviter les CDI si vous cherchez un stage. |
-| **Doublons** | Entreprise deja listee. | Le script verifie les 100 dernieres lignes avant toute insertion. |
+| **Le menu n'apparaît pas** | Autorisation manquante. | Exécuter la fonction `onOpen` manuellement dans l'éditeur une fois. |
+| **Bouton "Activer" reste là** | Témoin non synchronisé. | Cliquer sur "Activer" pour forcer la mise à jour de la propriété. |
+| **Erreur de Quota (429)** | Trop d'appels API. | Le script intègre des pauses (`sleep`), vérifiez votre quota sur AI Studio. |
 
-## 🔒 Securite
+---
 
-- Depot GitHub prive recommande.
-- Cles API stockees uniquement dans les Script Properties.
+*Développé avec ❤️ pour rendre la recherche d'emploi moins chronophage.*
+
+---
