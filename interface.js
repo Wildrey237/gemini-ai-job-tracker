@@ -33,6 +33,7 @@ function onOpen() {
   menu.addSeparator()
     .addItem('🔍 Lancer Sourcing (Manuel)', 'menuLancerSourcing')
     .addItem('🔄 Actualiser Réponses (Manuel)', 'menuLancerUpdate')
+    .addItem('🤖 Détecter nouvelles Newsletters (Manuel)', 'menuLancerAutoConfig') // <-- AJOUT ICI
     .addSeparator()
     .addItem('🧹 Nettoyer les Logs', 'maintenanceNettoyageLogs')
     .addToUi();
@@ -56,21 +57,34 @@ function uiInstallerAutomatisation() {
     return;
   }
 
-  // Nettoyage préventif
   uiSupprimerAutomatisation(true); 
 
   try {
-    // Création du planning
+    // --- Création des Triggers ---
     ScriptApp.newTrigger('analyserMailsCandidaturesEnvoyees').timeBased().everyDays(1).atHour(0).create();
     ScriptApp.newTrigger('analyserMailsReponsesRecues').timeBased().everyDays(1).atHour(3).create();
     ScriptApp.newTrigger('analyserNewslettersOpportunites').timeBased().everyDays(1).atHour(6).create();
+    ScriptApp.newTrigger('detecterEtConfigurerNewsletters').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(21).create();
     ScriptApp.newTrigger('maintenanceNettoyageLogs').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(9).create();
 
-    // MISE À JOUR DU TÉMOIN
     props.setProperty('TRIGGERS_ACTIVATED', 'true');
 
-    ui.alert('🚀 C\'est parti !', 'L\'automatisation est configurée. Le menu va se mettre à jour.', ui.ButtonSet.OK);
-    if (typeof enregistrerLog === "function") enregistrerLog("CONFIG", "Triggers installés", false, "Planning complet activé.");
+    // --- Message de confirmation détaillé ---
+    const recapPlanning = 
+      "🚀 C'est parti ! L'automatisation est configurée.\n\n" +
+      "Voici votre planning de suivi :\n" +
+      "• 00h00 (Quotidien) : Collecte de vos nouvelles candidatures envoyées.\n" +
+      "• 03h00 (Quotidien) : Analyse des réponses RH et mise à jour des statuts.\n" +
+      "• 06h00 (Quotidien) : Sourcing automatique via vos newsletters activées.\n" +
+      "• Dimanche 21h00 : Scan intelligent pour détecter de nouvelles sources d'offres.\n" +
+      "• Lundi 09h00 : Nettoyage automatique du journal des logs.\n\n" +
+      "Le script travaillera en arrière-plan, même si ce fichier est fermé.";
+
+    ui.alert('Système Activé', recapPlanning, ui.ButtonSet.OK);
+    
+    if (typeof enregistrerLog === "function") {
+      enregistrerLog("CONFIG", "Planning complet activé", false, "00h/03h/06h/Dimanche 21h/Lundi 09h");
+    }
     
     onOpen(); // Actualise le menu
   } catch (e) {
@@ -146,6 +160,9 @@ function uiSupprimerCleAPI() {
  */
 function menuLancerSourcing() { executerAvecVerrou('analyserNewslettersOpportunites', 'Sourcing Manuel'); }
 function menuLancerUpdate() { executerAvecVerrou('analyserMailsReponsesRecues', 'Update Manuel'); }
+function menuLancerAutoConfig() { 
+  executerAvecVerrou('detecterEtConfigurerNewsletters', 'Détection Newsletters Manuelle'); 
+}
 
 function executerAvecVerrou(nomFonction, labelLog) {
   const ui = SpreadsheetApp.getUi();
