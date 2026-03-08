@@ -10,6 +10,7 @@ function onOpen() {
   const ui = SpreadsheetApp.getUi();
   const props = PropertiesService.getScriptProperties();
   const hasKey = props.getProperty('GEMINI_KEY') !== null;
+  const hasTriggers = ScriptApp.getProjectTriggers().length > 0;
   
   // --- Création du Menu ---
   const menu = ui.createMenu('🚀 AI Job Tracker');
@@ -20,13 +21,18 @@ function onOpen() {
     menu.addItem('🔑 1. Configurer ma Clé API', 'uiDemanderCleAPI');
   }
 
-  menu.addItem('⏰ 2. Activer l\'automatisation', 'uiInstallerAutomatisation')
-    .addSeparator()
+  // 2. GESTION DYNAMIQUE DE L'AUTOMATISATION
+  if (hasTriggers) {
+    menu.addItem('🚫 Désactiver l\'automatisation', 'uiSupprimerAutomatisation');
+  } else {
+    menu.addItem('⏰ 2. Activer l\'automatisation', 'uiInstallerAutomatisation');
+  }
+
+  menu.addSeparator()
     .addItem('🔍 Lancer Sourcing (Manuel)', 'menuLancerSourcing')
     .addItem('🔄 Actualiser Réponses (Manuel)', 'menuLancerUpdate')
     .addSeparator()
     .addItem('🧹 Nettoyer les Logs', 'maintenanceNettoyageLogs')
-    .addItem('🚫 Désactiver l\'automatisation', 'uiSupprimerAutomatisation')
     .addToUi();
 
   // --- NOUVEAU : Test de la clé à l'ouverture ---
