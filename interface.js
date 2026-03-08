@@ -3,14 +3,17 @@
  * Gère le menu, le verrouillage et la communication avec l'utilisateur (et les logs).
  */
 
+/**
+ * Se lance automatiquement à l'ouverture du Sheet.
+ */
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   const props = PropertiesService.getScriptProperties();
   const hasKey = props.getProperty('GEMINI_KEY') !== null;
   
+  // --- Création du Menu ---
   const menu = ui.createMenu('🚀 AI Job Tracker');
 
-  // Affichage dynamique : On ne propose que ce qui fait sens
   if (hasKey) {
     menu.addItem('❌ Supprimer ma Clé API', 'uiSupprimerCleAPI');
   } else {
@@ -25,6 +28,41 @@ function onOpen() {
     .addItem('🧹 Nettoyer les Logs', 'maintenanceNettoyageLogs')
     .addItem('🚫 Désactiver l\'automatisation', 'uiSupprimerAutomatisation')
     .addToUi();
+
+  // --- NOUVEAU : Test de la clé à l'ouverture ---
+  if (!hasKey) {
+    Utilities.sleep(1500); // On attend que le Sheet soit bien visible
+    uiDemanderCleAPI();
+  }
+}
+
+/**
+ * GESTION DE LA CLÉ API AVEC INSTRUCTIONS
+ */
+function uiDemanderCleAPI() {
+  const ui = SpreadsheetApp.getUi();
+  
+  // Instructions claires pour l'utilisateur
+  const instructions = 
+    "Bienvenue dans votre assistant de candidature !\n\n" +
+    "Pour fonctionner, ce script a besoin d'une clé API Gemini (gratuite).\n" +
+    "1. Allez sur : https://aistudio.google.com/app/apikey\n" +
+    "2. Créez une clé 'API Key'.\n" +
+    "3. Collez-la ci-dessous :\n";
+
+  const response = ui.prompt('🔑 Configuration Initiale', instructions, ui.ButtonSet.OK_CANCEL);
+  
+  if (response.getSelectedButton() == ui.Button.OK) {
+    const key = response.getResponseText().trim();
+    if (key !== "") {
+      PropertiesService.getScriptProperties().setProperty('GEMINI_KEY', key);
+      ui.alert('✅ Impeccable !', 'Votre clé est enregistrée. Vous pouvez maintenant activer l\'automatisation.', ui.ButtonSet.OK);
+      if (typeof enregistrerLog === "function") enregistrerLog("CONFIG", "Clé API ajoutée", false, "Configuration initiale.");
+      onOpen(); // On rafraîchit le menu pour afficher "Supprimer"
+    } else {
+      ui.alert('⚠️ Attention', 'La clé ne peut pas être vide.', ui.ButtonSet.OK);
+    }
+  }
 }
 
 /**
@@ -107,6 +145,7 @@ function uiSupprimerAutomatisation(silencieux = false) {
 /**
  * GESTION DE LA CLÉ API
  */
+/*
 function uiDemanderCleAPI() {
   const ui = SpreadsheetApp.getUi();
   const response = ui.prompt('🔑 Configuration IA', 'Collez votre clé Gemini API pour réveiller le script :', ui.ButtonSet.OK_CANCEL);
@@ -121,6 +160,7 @@ function uiDemanderCleAPI() {
     }
   }
 }
+*/
 
 function uiSupprimerCleAPI() {
   const ui = SpreadsheetApp.getUi();
