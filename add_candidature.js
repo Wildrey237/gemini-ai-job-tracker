@@ -52,13 +52,11 @@ function analyserMailsCandidaturesEnvoyees() {
 
         const resume = `Scan: ${stats.scannes} | Ajouts: ${stats.ajouts} | Enrichis: ${stats.enrichis}`;
         console.log(">>> [RESUME FINAL] : " + resume);
-        enregistrerLog(nomF, resume, false, stats.details.join("\n"));
+        writeLog(nomF, resume, "Non", stats.details.join("\n"));
 
     } catch (e) {
         console.error("!!! [ERREUR S1] : " + e.toString());
-        if (typeof enregistrerLog === "function") {
-            enregistrerLog(nomF, "Erreur Add", true, e.toString());
-        }
+        writeLog(nomF, "Erreur Add", "Oui", e.toString());
     }
 }
 

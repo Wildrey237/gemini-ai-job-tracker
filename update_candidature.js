@@ -1,32 +1,39 @@
 /**
- * CONFIGURATION DES FILTRES (Facile à modifier)
- */
-const CONFIG_FILTRES = {
-    "blacklist_emails": [
-        "jobs-listings@linkedin.com",
-        "jobalerts-noreply@linkedin.com"
-    ]
-};
-
-/**
  * SCRIPT 2 : Analyse des Réponses et Mise à jour du Suivi
+ * Mise à jour : Blacklist dynamique via l'onglet Config.
  */
 function analyserMailsReponsesRecues() {
     const nomF = "update_candidature";
     const props = PropertiesService.getScriptProperties();
     const nomSheet = props.getProperty('SHEET_NAME');
+    const nomSheetConfig = props.getProperty('SHEET_NEWSLETTER_CONFIG') || 'config';
 
-    let stats = {emailsScannes: 0, majEffectuees: 0, alertesEnvoyees: 0, details: []};
+    let stats = {
+        emailsVus: 0,
+        count: 0,
+        emailsScannes: 0,
+        majEffectuees: 0,
+        alertesEnvoyees: 0,
+        details: []
+    };
     let alertesManuelles = [];
 
-    console.log(">>> [DEBUT] Lancement du chasseur de réponses (V3 - Blacklist & Flush)...");
+    console.log(">>> [DEBUT] Lancement du chasseur de réponses (V4 - Config Dynamic Blacklist)...");
 
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         const sheet = ss.getSheetByName(nomSheet);
-        if (!sheet) throw new Error(`Feuille ${nomSheet} introuvable.`);
+        const sheetConfig = ss.getSheetByName(nomSheetConfig);
 
-        // 1. DATA : Récupérer les entreprises "En attente" (Colonne A et D)
+        if (!sheet) throw new Error(`Feuille ${nomSheet} introuvable.`);
+        if (!sheetConfig) throw new Error(`Feuille de configuration ${nomSheetConfig} introuvable.`);
+
+        // 1. RECUPERATION DE LA CONFIGURATION (Pour la Blacklist dynamique)
+        const configSourcing = recupererConfiguration(sheetConfig);
+        const blacklistDynamique = configSourcing.emails.map(e => e.toLowerCase().trim());
+        console.log(`🚫 [BLACKLIST] ${blacklistDynamique.length} emails de newsletters seront ignorés.`);
+
+        // 2. DATA : Récupérer les entreprises "En attente"
         const lastRow = sheet.getLastRow();
         if (lastRow < 2) {
             console.log("[DATA] Sheet vide ou seulement en-têtes. Fin.");
@@ -40,51 +47,53 @@ function analyserMailsReponsesRecues() {
 
         console.log(`[DATA] ${entreprisesEnAttente.length} entreprises "En attente" détectées.`);
 
-        // 2. COLLECTE : Recherche Gmail avec exclusion des labels existants
+        // 3. COLLECTE : Recherche Gmail
         const threads = collecterEmailsFiltres(entreprisesEnAttente);
         stats.emailsScannes = threads.length;
+        stats.emailsVus = threads.length;
 
         if (stats.emailsScannes > 0) {
             for (const thread of threads) {
-                // PAUSE DE SÉCURITÉ (Anti-429)
-                Utilities.sleep(2000);
+                Utilities.sleep(2000); // Anti-429
 
-                const resultat = traiterUnFilOptimise(thread, sheet, entreprisesEnAttente);
+                // On passe la blacklist dynamique au traitement
+                const resultat = traiterUnFilOptimise(thread, sheet, entreprisesEnAttente, blacklistDynamique);
 
                 if (resultat && resultat.succes) {
                     stats.majEffectuees++;
-                    stats.details.push(`✅ ${resultat.info}`);
-                    // FORCE L'ECRITURE DANS LE SHEET IMMEDIATEMENT
+                    stats.count++;
+                    stats.details.push(`${resultat.info}`);
                     SpreadsheetApp.flush();
                 } else if (resultat && resultat.alerteMail) {
                     stats.alertesEnvoyees++;
                     alertesManuelles.push(resultat.info);
-                    stats.details.push(`📩 Alerte : ${resultat.info}`);
                 }
             }
         }
 
-        const resume = `Scan: ${stats.emailsScannes} | MàJ: ${stats.majEffectuees} | Alertes: ${stats.alertesEnvoyees}`;
-        console.log(">>> [RESUME FINAL] : " + resume);
-        enregistrerLog(nomF, resume, false, stats.details.join("\n"));
+        const resumeConsole = `Scan: ${stats.emailsScannes} | MàJ: ${stats.majEffectuees} | Alertes: ${stats.alertesEnvoyees}`;
+        console.log(">>> [RESUME FINAL] : " + resumeConsole);
 
-        if (alertesManuelles.length > 0) {
+        const messageExcel = construireResumeFinal("Mise à jour", stats);
+        const msgErreurLien = alertesManuelles.length > 0 ? "Alertes : " + alertesManuelles.join(", ") : "";
+
+        writeLog(nomF, messageExcel, "Non", msgErreurLien);
+
+        if (alertesManuelles.length > 0 && typeof envoyerMailAlerteGroupee === "function") {
             envoyerMailAlerteGroupee(alertesManuelles);
         }
 
     } catch (e) {
         console.error("!!! [ERREUR] : " + e.toString());
-        if (typeof enregistrerLog === "function") {
-            enregistrerLog(nomF, "ERREUR EXECUTION", true, e.toString());
-        }
+        writeLog(nomF, "ERREUR EXECUTION", "Oui", e.toString());
     }
 }
 
 /**
- * COLLECTE : Filtre Gmail (7 jours pour tests)
+ * COLLECTE : Filtre Gmail
  */
 function collecterEmailsFiltres(entreprises) {
-    const periode = "1d"; // MODIFIER ICI : "2d" pour la prod
+    const periode = "1d";
     const labelAjoute = "IA-Candidature-Ajoutée";
     const labelsResultats = '(-label:IA-Réponse-Refusée -label:IA-Réponse-Entretien -label:IA-Réponse-En-Cours -label:IA-Réponse-Acceptée)';
 
@@ -96,19 +105,19 @@ function collecterEmailsFiltres(entreprises) {
 }
 
 /**
- * SOUS-FONCTION : Analyse et Matching avec Blacklist
+ * SOUS-FONCTION : Analyse et Matching avec Blacklist Dynamique
  */
-function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente) {
+function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente, blacklist) {
     const messages = thread.getMessages();
     const lastMessage = messages[messages.length - 1];
     const emailExpediteur = lastMessage.getFrom().toLowerCase();
     const sujet = lastMessage.getSubject();
     const corps = lastMessage.getPlainBody();
 
-    // --- FILTRE : BLACKLIST JSON ---
-    const estBlackliste = CONFIG_FILTRES.blacklist_emails.some(email => emailExpediteur.includes(email.toLowerCase()));
+    // --- FILTRE : BLACKLIST DYNAMIQUE (Depuis Config) ---
+    const estBlackliste = blacklist.some(email => emailExpediteur.includes(email));
     if (estBlackliste) {
-        console.log(`| - [SKIP] Blacklist détectée : ${emailExpediteur}`);
+        console.log(`| - [SKIP] Blacklist Config détectée : ${emailExpediteur}`);
         return {succes: false};
     }
 
@@ -125,7 +134,7 @@ function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente) {
     const analyse = callGeminiCentral(prompt);
     if (!analyse || !analyse.entreprise) return {succes: false};
 
-    // B. MATCHING NORMALISÉ (Sans accents)
+    // B. MATCHING NORMALISÉ
     let cible = null;
     const nomIA = normaliser(analyse.entreprise);
     const sujetN = normaliser(sujet);
@@ -133,8 +142,6 @@ function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente) {
 
     for (let item of entreprisesEnAttente) {
         const nomS = normaliser(item.nom);
-
-        // Comparaison croisée
         const match = nomIA.includes(nomS) || nomS.includes(nomIA) || sujetN.includes(nomS) || expN.includes(nomS);
 
         if (match) {
@@ -148,34 +155,32 @@ function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente) {
 
     // C. ACTIONS
     if (cible) {
-        // 1. MISE À JOUR SHEET
         sheet.getRange(cible.ligne, 4).setValue(analyse.verdict);
         sheet.getRange(cible.ligne, 9).setValue(dateJ);
 
         let note = `[${dateJ}] ${analyse.details}`;
 
+        const rangeLigne = sheet.getRange(cible.ligne, 1, 1, 9);
         if (analyse.verdict === "Entretien") {
             const rdv = extraireDateCalendrier(corps);
             if (rdv && rdv.date !== "inconnu") {
                 creerEvenementCalendrier(analyse.entreprise, rdv, thread.getPermalink());
                 note += ` | 📅 RDV : ${rdv.date} à ${rdv.heure}`;
             }
-            sheet.getRange(cible.ligne, 1, 1, 9).setBackground("#cfe2ff");
+            rangeLigne.setBackground("#cfe2ff");
         } else if (analyse.verdict === "Refusé") {
-            sheet.getRange(cible.ligne, 1, 1, 9).setBackground("#f8d7da");
+            rangeLigne.setBackground("#f8d7da");
         } else if (analyse.verdict === "Accepté") {
-            sheet.getRange(cible.ligne, 1, 1, 9).setBackground("#d4edda");
+            rangeLigne.setBackground("#d4edda");
         }
 
         const oldNote = sheet.getRange(cible.ligne, 6).getValue();
         sheet.getRange(cible.ligne, 6).setValue(oldNote ? `${oldNote} | ${note}` : note);
 
-        // 2. LABELS GMAIL
         appliquerLabelVerdict(thread, analyse.verdict);
 
-        return {succes: true, info: `${analyse.entreprise} (Match Ligne ${cible.ligne})`};
+        return {succes: true, info: `${analyse.entreprise} (Ligne ${cible.ligne})`};
     } else {
-        // 3. ALERTE MAIL
         return {
             alerteMail: true,
             info: `Entreprise: ${analyse.entreprise} | Verdict: ${analyse.verdict} | Lien: ${thread.getPermalink()}`

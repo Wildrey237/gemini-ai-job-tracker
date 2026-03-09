@@ -1,46 +1,70 @@
 /**
- * FONCTION DE MAINTENANCE : Nettoyage et Archivage des vieux logs
- * À exécuter une fois par jour (Trigger quotidien)
+ * 🧹 FONCTION DE MAINTENANCE : Nettoyage des vieux logs
+ * Supprime les entrées de plus de 30 jours et consigne un rapport unique.
  */
 function maintenanceNettoyageLogs() {
+    const nomF = "maintenanceNettoyageLogs";
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     const logSheet = ss.getSheetByName("logs");
 
     if (!logSheet) {
-        console.error("Maintenance : Onglet 'logs' introuvable.");
+        console.error("❌ [MAINTENANCE] Onglet 'logs' introuvable.");
         return;
     }
 
     const dateAujourdhui = new Date();
-    const limiteRetention = 30; // Nombre de jours de conservation
+    const limiteRetention = 30; // Jours de conservation
     const logs = logSheet.getDataRange().getValues();
 
-    // On commence à la ligne 2 pour garder l'en-tête (index 1 dans logs)
-    let lignesASupprimer = 0;
+    let lignesSupprimees = 0;
+    let detailsArchivage = [];
 
     console.log(">>> [MAINTENANCE] Début du nettoyage des logs...");
 
-    // On parcourt de bas en haut pour ne pas fausser les index lors de la suppression
+    // Parcours de bas en haut pour ne pas corrompre les index de lignes lors de la suppression
     for (let i = logs.length - 1; i >= 1; i--) {
-        const dateLog = new Date(logs[i][0]); // Colonne A : Date
+        const dateLogRaw = logs[i][0]; // Colonne A : Date
+
+        // Conversion sécurisée de la date (gère le format string ou Date object)
+        let dateLog;
+        if (dateLogRaw instanceof Date) {
+            dateLog = dateLogRaw;
+        } else {
+            // Tente de parser si c'est une string dd/mm/yyyy
+            const parts = String(dateLogRaw).split('/');
+            if (parts.length === 3) {
+                dateLog = new Date(parts[2], parts[1] - 1, parts[0]);
+            } else {
+                dateLog = new Date(dateLogRaw);
+            }
+        }
 
         if (isValidDate(dateLog)) {
             const differenceJours = (dateAujourdhui - dateLog) / (1000 * 60 * 60 * 24);
 
             if (differenceJours > limiteRetention) {
-                // Archivage symbolique dans la console avant suppression
-                console.log(`Archivage : Log du ${logs[i][0]} - ${logs[i][2]} : ${logs[i][3]}`);
-
+                lignesSupprimees++;
+                // On garde une trace des fonctions supprimées pour le log final
+                if (detailsArchivage.length < 5) {
+                    detailsArchivage.push(`${logs[i][2]} (${logs[i][0]})`);
+                }
                 logSheet.deleteRow(i + 1);
-                lignesASupprimer++;
             }
         }
     }
 
-    if (lignesASupprimer > 0) {
-        console.log(`>>> [MAINTENANCE] Succès : ${lignesASupprimer} vieux logs supprimés.`);
+    // --- RÉSUMÉ ET LOG FINAL ---
+    let messageFinal = "";
+    if (lignesSupprimees > 0) {
+        messageFinal = `Nettoyage réussi : ${lignesSupprimees} entrées supprimées (>30 jours).`;
+        const detailTexte = `Exemples supprimés : ${detailsArchivage.join(", ")}...`;
+
+        // On écrit le log APRES la suppression pour qu'il reste dans le sheet
+        writeLog(nomF, messageFinal, "Non", detailTexte);
+        console.log(`>>> [MAINTENANCE] ${messageFinal}`);
     } else {
-        console.log(">>> [MAINTENANCE] Aucun log à supprimer aujourd'hui.");
+        console.log(">>> [MAINTENANCE] Aucun log à supprimer.");
+        // Optionnel : ne pas écrire de log si rien n'est fait pour ne pas remplir le sheet
     }
 }
 
@@ -48,5 +72,5 @@ function maintenanceNettoyageLogs() {
  * Utilitaire pour vérifier la validité d'une date
  */
 function isValidDate(d) {
-    return d instanceof Date && !isNaN(d);
+    return d instanceof Date && !isNaN(d.getTime());
 }

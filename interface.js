@@ -1,6 +1,6 @@
 /**
  * 🚀 INTERFACE UTILISATEUR (UI)
- * Gère le menu dynamique, le verrouillage et la communication.
+ * Gère le menu dynamique, le verrouillage et la communication via writeLog.
  */
 
 /**
@@ -33,7 +33,7 @@ function onOpen() {
     menu.addSeparator()
         .addItem('🔍 Lancer Sourcing (Manuel)', 'menuLancerSourcing')
         .addItem('🔄 Actualiser Réponses (Manuel)', 'menuLancerUpdate')
-        .addItem('🤖 Détecter nouvelles Newsletters (Manuel)', 'menuLancerAutoConfig') // <-- AJOUT ICI
+        .addItem('🤖 Détecter nouvelles Newsletters (Manuel)', 'menuLancerAutoConfig')
         .addSeparator()
         .addItem('🧹 Nettoyer les Logs', 'maintenanceNettoyageLogs')
         .addToUi();
@@ -53,7 +53,7 @@ function uiInstallerAutomatisation() {
     const props = PropertiesService.getScriptProperties();
 
     if (!props.getProperty('GEMINI_KEY')) {
-        ui.alert('❌ Stop !', 'Pas de clé API, pas de chocolat. Configurez la clé d\'abord (Étape 1).', ui.ButtonSet.OK);
+        ui.alert('❌ Stop !', 'Pas de clé API. Configurez la clé d\'abord (Étape 1).', ui.ButtonSet.OK);
         return;
     }
 
@@ -69,26 +69,25 @@ function uiInstallerAutomatisation() {
 
         props.setProperty('TRIGGERS_ACTIVATED', 'true');
 
-        // --- Message de confirmation détaillé ---
         const recapPlanning =
             "🚀 C'est parti ! L'automatisation est configurée.\n\n" +
-            "Voici votre planning de suivi :\n" +
-            "• 00h00 (Quotidien) : Collecte de vos nouvelles candidatures envoyées.\n" +
-            "• 03h00 (Quotidien) : Analyse des réponses RH et mise à jour des statuts.\n" +
-            "• 06h00 (Quotidien) : Sourcing automatique via vos newsletters activées.\n" +
-            "• Dimanche 21h00 : Scan intelligent pour détecter de nouvelles sources d'offres.\n" +
-            "• Lundi 09h00 : Nettoyage automatique du journal des logs.\n\n" +
-            "Le script travaillera en arrière-plan, même si ce fichier est fermé.";
+            "Voici votre planning :\n" +
+            "• 00h00 : Collecte candidatures envoyées.\n" +
+            "• 03h00 : Analyse réponses RH.\n" +
+            "• 06h00 : Sourcing newsletters.\n" +
+            "• Dimanche 21h00 : Détection nouvelles newsletters.\n" +
+            "• Lundi 09h00 : Nettoyage des logs.\n\n" +
+            "Le script travaillera en arrière-plan.";
 
         ui.alert('Système Activé', recapPlanning, ui.ButtonSet.OK);
 
-        if (typeof enregistrerLog === "function") {
-            enregistrerLog("CONFIG", "Planning complet activé", false, "00h/03h/06h/Dimanche 21h/Lundi 09h");
-        }
+        // Utilisation de writeLog
+        writeLog("uiInstallerAutomatisation", "Planning complet activé", "Non", "Triggers : 00h/03h/06h/Dim 21h/Lun 09h");
 
-        onOpen(); // Actualise le menu
+        onOpen();
     } catch (e) {
         ui.alert('❌ Erreur technique', e.toString(), ui.ButtonSet.OK);
+        writeLog("uiInstallerAutomatisation", "Échec installation triggers", "Oui", e.toString());
     }
 }
 
@@ -99,43 +98,33 @@ function uiSupprimerAutomatisation(silencieux = false) {
     const props = PropertiesService.getScriptProperties();
     const triggers = ScriptApp.getProjectTriggers();
 
-    // Suppression réelle
     triggers.forEach(t => ScriptApp.deleteTrigger(t));
-
-    // MISE À JOUR DU TÉMOIN
     props.setProperty('TRIGGERS_ACTIVATED', 'false');
 
     if (!silencieux) {
         SpreadsheetApp.getUi().alert('📴 Silence radio', 'Toutes les automatisations ont été supprimées.', SpreadsheetApp.getUi().ButtonSet.OK);
-        if (typeof enregistrerLog === "function") enregistrerLog("CONFIG", "Triggers supprimés", false, "Désactivation manuelle.");
-        onOpen(); // Actualise le menu
+        writeLog("uiSupprimerAutomatisation", "Désactivation manuelle de l'automatisation", "Non", "Tous les triggers ont été retirés.");
+        onOpen();
     }
 }
 
 /**
- * GESTION DE LA CLÉ API AVEC INSTRUCTIONS
+ * GESTION DE LA CLÉ API
  */
 function uiDemanderCleAPI() {
     const ui = SpreadsheetApp.getUi();
-
-    const instructions =
-        "Bienvenue dans votre assistant de candidature !\n\n" +
-        "Pour fonctionner, ce script a besoin d'une clé API Gemini (gratuite).\n" +
-        "1. Allez sur : https://aistudio.google.com/app/apikey\n" +
-        "2. Créez une clé 'API Key'.\n" +
-        "3. Collez-la ci-dessous :\n";
-
-    const response = ui.prompt('🔑 Configuration Initiale', instructions, ui.ButtonSet.OK_CANCEL);
+    const instructions = "Allez sur : https://aistudio.google.com/app/apikey\nCopiez votre clé et collez-la ci-dessous :";
+    const response = ui.prompt('🔑 Configuration Clé Gemini', instructions, ui.ButtonSet.OK_CANCEL);
 
     if (response.getSelectedButton() == ui.Button.OK) {
         const key = response.getResponseText().trim();
         if (key !== "") {
             PropertiesService.getScriptProperties().setProperty('GEMINI_KEY', key);
-            ui.alert('✅ Impeccable !', 'Votre clé est enregistrée. Vous pouvez activer l\'automatisation.', ui.ButtonSet.OK);
-            if (typeof enregistrerLog === "function") enregistrerLog("CONFIG", "Clé API ajoutée", false, "Clé configurée via prompt.");
+            ui.alert('✅ Enregistré !', 'Clé configurée.', ui.ButtonSet.OK);
+            writeLog("uiDemanderCleAPI", "Mise à jour de la clé API", "Non", "Clé configurée via prompt utilisateur.");
             onOpen();
         } else {
-            ui.alert('⚠️ Attention', 'La clé ne peut pas être vide.', ui.ButtonSet.OK);
+            ui.alert('⚠️ Erreur', 'La clé ne peut pas être vide.', ui.ButtonSet.OK);
         }
     }
 }
@@ -145,18 +134,18 @@ function uiDemanderCleAPI() {
  */
 function uiSupprimerCleAPI() {
     const ui = SpreadsheetApp.getUi();
-    const confirm = ui.alert('❌ Sécurité', 'Voulez-vous supprimer votre clé ? Le script s\'arrêtera.', ui.ButtonSet.YES_NO);
+    const confirm = ui.alert('❌ Sécurité', 'Voulez-vous supprimer votre clé ?', ui.ButtonSet.YES_NO);
 
     if (confirm == ui.Button.YES) {
         PropertiesService.getScriptProperties().deleteProperty('GEMINI_KEY');
-        ui.alert('🗑️ Clé supprimée.', 'Au revoir, petit robot.', ui.ButtonSet.OK);
-        if (typeof enregistrerLog === "function") enregistrerLog("CONFIG", "Clé API supprimée", false, "Retrait manuel.");
+        ui.alert('🗑️ Clé supprimée.', 'Le robot est désormais hors ligne.', ui.ButtonSet.OK);
+        writeLog("uiSupprimerCleAPI", "Suppression manuelle de la clé API", "Non", "La clé a été retirée des Script Properties.");
         onOpen();
     }
 }
 
 /**
- * WRAPPERS & CORE LOGIC
+ * WRAPPERS MANUELS AVEC VERROUILLAGE
  */
 function menuLancerSourcing() {
     executerAvecVerrou('analyserNewslettersOpportunites', 'Sourcing Manuel');
@@ -170,23 +159,32 @@ function menuLancerAutoConfig() {
     executerAvecVerrou('detecterEtConfigurerNewsletters', 'Détection Newsletters Manuelle');
 }
 
+/**
+ * MOTEUR D'EXÉCUTION SÉCURISÉ
+ */
 function executerAvecVerrou(nomFonction, labelLog) {
     const ui = SpreadsheetApp.getUi();
     const props = PropertiesService.getScriptProperties();
 
     if (props.getProperty('IS_RUNNING') === 'true') {
-        ui.alert('⏳ Oh là !', 'Une analyse est déjà en cours.', ui.ButtonSet.OK);
+        ui.alert('⏳ Patience...', 'Une analyse est déjà en cours.', ui.ButtonSet.OK);
         return;
     }
 
     try {
         props.setProperty('IS_RUNNING', 'true');
-        this[nomFonction]();
+
+        // Appel dynamique de la fonction
+        const resultat = this[nomFonction]();
+
         ui.alert('✅ Terminé !', `L'action "${labelLog}" est finie.`, ui.ButtonSet.OK);
-        if (typeof enregistrerLog === "function") enregistrerLog("UI_ACTION", `Succès : ${labelLog}`, false, "Manuel");
+
+        // Log de succès (on passe le résultat du script s'il existe en message)
+        writeLog(nomFonction, `Succès : ${labelLog}`, "Non", resultat || "Exécution manuelle terminée");
+
     } catch (e) {
-        ui.alert('❌ Oups...', e.toString(), ui.ButtonSet.OK);
-        if (typeof enregistrerLog === "function") enregistrerLog("UI_ACTION", `ERREUR : ${labelLog}`, true, e.toString());
+        ui.alert('❌ Erreur', e.toString(), ui.ButtonSet.OK);
+        writeLog(nomFonction, `ERREUR lors de : ${labelLog}`, "Oui", e.toString());
     } finally {
         props.setProperty('IS_RUNNING', 'false');
     }
