@@ -101,6 +101,12 @@ Fonction de reference : `detecterEtConfigurerNewsletters`
 
 Le systeme peut detecter de nouvelles sources de newsletters et mettre a jour la configuration de sourcing.
 
+Comportement actuel (dans `auto_config_newsletter.js`) :
+
+- scan `newer_than:7d` (max `20` threads)
+- exclusion des threads deja labels `Newslatter-jobs-extraites`
+- ajout des expéditeurs valides dans la colonne D de la feuille config
+
 ---
 
 ## 🧰 Interface utilisateur
@@ -139,6 +145,11 @@ Une fois activee, l'automatisation installe ce planning :
 3. Lancez `onOpen()` une premiere fois et acceptez les autorisations.
 4. Dans le menu `🚀 AI Job Tracker`, cliquez sur `🔑 1. Configurer ma Clé API`.
 5. Activez ensuite `⏰ 2. Activer l'automatisation`.
+
+Si votre menu n'affiche pas de numerotation, utilisez :
+
+- `🔑 Configurer ma Clé API`
+- `⏰ Activer l'automatisation`
 
 Creer une cle Gemini : [https://aistudio.google.com/api-keys](https://aistudio.google.com/api-keys)
 
@@ -219,9 +230,16 @@ Script API central : `api.js`
 
 ## 📊 Logging & monitoring
 
-Les actions sont journalisees via `logs.js` et `enregistrerLog(...)`.
+Les actions sont journalisees via `logger.js` et `writeLog(...)`.
 
-Exemples de tags utilises : `CONFIG`, `UI_ACTION`, `ERREUR`, `AI_PROCESS`.
+Format du log (onglet `logs`) :
+
+- `Date`
+- `Heure`
+- `Fonction`
+- `Message`
+- `Erreur` (`Oui`/`Non`)
+- `Message d'erreur`
 
 Maintenance automatique : nettoyage periodique des logs via `maintenanceNettoyageLogs`.
 
@@ -234,12 +252,14 @@ Maintenance automatique : nettoyage periodique des logs via `maintenanceNettoyag
 - `update_candidature.js` : pipeline S2 (reponses RH).
 - `sourcing_universel.js` : pipeline S3 (sourcing multi-offres).
 - `api.js` : connecteur Gemini.
-- `logs.js` : journalisation.
+- `logger.js` : journalisation universelle (`writeLog`, `construireResumeFinal`).
 - `maintenance.js` : routines de maintenance.
 
 ### Script Properties utilisees
 
 - `GEMINI_KEY`
+- `MODEL_NAME`
+- `SHEET_NAME`
 - `TRIGGERS_ACTIVATED`
 - `IS_RUNNING`
 - `SHEET_NEWSLETTER`

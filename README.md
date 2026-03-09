@@ -101,6 +101,12 @@ Reference function: `detecterEtConfigurerNewsletters`
 
 The system can detect new newsletter sources and automatically update sourcing configuration.
 
+Current behavior (from `auto_config_newsletter.js`):
+
+- scans `newer_than:7d` emails (max `20` threads)
+- excludes threads already labeled `Newslatter-jobs-extraites`
+- writes newly approved senders into config column D
+
 ---
 
 ## 🧰 User Interface
@@ -139,6 +145,11 @@ Once enabled, automation installs this schedule:
 3. Run `onOpen()` once and accept permissions.
 4. In menu `🚀 AI Job Tracker`, click `🔑 1. Configurer ma Clé API`.
 5. Then click `⏰ 2. Activer l'automatisation`.
+
+If your menu does not include numbering, use:
+
+- `🔑 Configurer ma Clé API`
+- `⏰ Activer l'automatisation`
 
 Create a Gemini API key: [https://aistudio.google.com/api-keys](https://aistudio.google.com/api-keys)
 
@@ -219,9 +230,16 @@ Central AI connector: `api.js`
 
 ## 📊 Logging & Monitoring
 
-Actions are logged via `logs.js` and `enregistrerLog(...)`.
+Actions are logged via `logger.js` and `writeLog(...)`.
 
-Tag examples: `CONFIG`, `UI_ACTION`, `ERREUR`, `AI_PROCESS`.
+Log format (sheet `logs`):
+
+- `Date`
+- `Heure`
+- `Fonction`
+- `Message`
+- `Erreur` (`Oui`/`Non`)
+- `Message d'erreur`
 
 Automatic maintenance: periodic cleanup via `maintenanceNettoyageLogs`.
 
@@ -234,12 +252,14 @@ Automatic maintenance: periodic cleanup via `maintenanceNettoyageLogs`.
 - `update_candidature.js`: S2 pipeline (HR replies).
 - `sourcing_universel.js`: S3 pipeline (multi-offer sourcing).
 - `api.js`: Gemini connector.
-- `logs.js`: logging engine.
+- `logger.js`: universal logging (`writeLog`, `construireResumeFinal`).
 - `maintenance.js`: maintenance routines.
 
 ### Script Properties used
 
 - `GEMINI_KEY`
+- `MODEL_NAME`
+- `SHEET_NAME`
 - `TRIGGERS_ACTIVATED`
 - `IS_RUNNING`
 - `SHEET_NEWSLETTER`

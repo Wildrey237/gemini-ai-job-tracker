@@ -15,7 +15,7 @@ function maintenanceNettoyageLogs() {
     const dateAujourdhui = new Date();
     const limiteRetention = 30; // Jours de conservation
     const logs = logSheet.getDataRange().getValues();
-
+    
     let lignesSupprimees = 0;
     let detailsArchivage = [];
 
@@ -24,7 +24,7 @@ function maintenanceNettoyageLogs() {
     // Parcours de bas en haut pour ne pas corrompre les index de lignes lors de la suppression
     for (let i = logs.length - 1; i >= 1; i--) {
         const dateLogRaw = logs[i][0]; // Colonne A : Date
-
+        
         // Conversion sécurisée de la date (gère le format string ou Date object)
         let dateLog;
         if (dateLogRaw instanceof Date) {
@@ -58,7 +58,7 @@ function maintenanceNettoyageLogs() {
     if (lignesSupprimees > 0) {
         messageFinal = `Nettoyage réussi : ${lignesSupprimees} entrées supprimées (>30 jours).`;
         const detailTexte = `Exemples supprimés : ${detailsArchivage.join(", ")}...`;
-
+        
         // On écrit le log APRES la suppression pour qu'il reste dans le sheet
         writeLog(nomF, messageFinal, "Non", detailTexte);
         console.log(`>>> [MAINTENANCE] ${messageFinal}`);

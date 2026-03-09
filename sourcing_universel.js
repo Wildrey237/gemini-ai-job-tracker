@@ -9,7 +9,7 @@ function analyserNewslettersOpportunites() {
     const nomSheetDest = props.getProperty('SHEET_NEWSLETTER');
     const nomSheetConfig = props.getProperty('SHEET_NEWSLETTER_CONFIG');
 
-    let stats = {mailsTraites: 0, count: 0, emailsVus: 0, details: []};
+    let stats = { mailsTraites: 0, count: 0, emailsVus: 0, details: [] };
     let erreursLocales = [];
 
     console.log(">>> [DEBUT] Lancement du Sourcing Universel (Nettoyage Systématique)...");
@@ -40,10 +40,10 @@ function analyserNewslettersOpportunites() {
                     thread.addLabel(label);
                     thread.moveToArchive();
                     console.log(`| - [NETTOYAGE] Mail "${thread.getFirstMessageSubject()}" labellisé et archivé.`);
-
+                    
                     if (resultat && resultat.nbOffres > 0) {
                         stats.count += resultat.nbOffres;
-                        stats.details.push(`${resultat.nbOffres} offres (${thread.getFirstMessageSubject().substring(0, 30)}...)`);
+                        stats.details.push(`${resultat.nbOffres} offres (${thread.getFirstMessageSubject().substring(0,30)}...)`);
                     }
                 } catch (err) {
                     erreursLocales.push(`Mail "${thread.getFirstMessageSubject()}" : ${err.toString()}`);
@@ -52,10 +52,10 @@ function analyserNewslettersOpportunites() {
             }
         }
 
-        const messageAction = construireResumeFinal("Ajout", stats);
-        console.log(">>> [RESUME FINAL] : " + messageAction);
-        writeLog(nomF, messageAction, erreursLocales.length > 0 ? "Oui" : "Non", erreursLocales.join(" | "));
-
+          const messageAction = construireResumeFinal("Ajout", stats);
+          console.log(">>> [RESUME FINAL] : " + messageAction);
+          writeLog(nomF, messageAction, erreursLocales.length > 0 ? "Oui" : "Non", erreursLocales.join(" | "));
+        
 
     } catch (e) {
         writeLog(nomF, "Erreur critique Sourcing", "Oui", e.toString());
@@ -76,7 +76,7 @@ function traiterUneNewsletter(thread, sheetDest, config) {
     const keywordsEN = ["job", "apply", "hiring", "location", "salary", "full-time", "remote"];
     const textSnippet = (sujet + " " + corps).toLowerCase();
     const isEnglish = keywordsEN.some(word => textSnippet.includes(word));
-
+    
     console.log(`| - [LANGUE] ${isEnglish ? "Anglais détecté" : "Français détecté"} pour : ${sujet}`);
 
     // --- ADAPTATION DU PROMPT ---

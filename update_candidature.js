@@ -9,11 +9,11 @@ function analyserMailsReponsesRecues() {
     const nomSheetConfig = props.getProperty('SHEET_NEWSLETTER_CONFIG') || 'config';
 
     let stats = {
-        emailsVus: 0,
-        count: 0,
-        emailsScannes: 0,
-        majEffectuees: 0,
-        alertesEnvoyees: 0,
+        emailsVus: 0, 
+        count: 0, 
+        emailsScannes: 0, 
+        majEffectuees: 0, 
+        alertesEnvoyees: 0, 
         details: []
     };
     let alertesManuelles = [];
@@ -76,7 +76,7 @@ function analyserMailsReponsesRecues() {
 
         const messageExcel = construireResumeFinal("Mise à jour", stats);
         const msgErreurLien = alertesManuelles.length > 0 ? "Alertes : " + alertesManuelles.join(", ") : "";
-
+        
         writeLog(nomF, messageExcel, "Non", msgErreurLien);
 
         if (alertesManuelles.length > 0 && typeof envoyerMailAlerteGroupee === "function") {

@@ -84,7 +84,7 @@ function uiInstallerAutomatisation() {
         // Utilisation de writeLog
         writeLog("uiInstallerAutomatisation", "Planning complet activé", "Non", "Triggers : 00h/03h/06h/Dim 21h/Lun 09h");
 
-        onOpen();
+        onOpen(); 
     } catch (e) {
         ui.alert('❌ Erreur technique', e.toString(), ui.ButtonSet.OK);
         writeLog("uiInstallerAutomatisation", "Échec installation triggers", "Oui", e.toString());
@@ -173,15 +173,15 @@ function executerAvecVerrou(nomFonction, labelLog) {
 
     try {
         props.setProperty('IS_RUNNING', 'true');
-
+        
         // Appel dynamique de la fonction
         const resultat = this[nomFonction]();
-
+        
         ui.alert('✅ Terminé !', `L'action "${labelLog}" est finie.`, ui.ButtonSet.OK);
-
+        
         // Log de succès (on passe le résultat du script s'il existe en message)
         writeLog(nomFonction, `Succès : ${labelLog}`, "Non", resultat || "Exécution manuelle terminée");
-
+        
     } catch (e) {
         ui.alert('❌ Erreur', e.toString(), ui.ButtonSet.OK);
         writeLog(nomFonction, `ERREUR lors de : ${labelLog}`, "Oui", e.toString());
