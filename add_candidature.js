@@ -1,22 +1,12 @@
 /**
- * CONFIGURATION : Blacklist pour ignorer les publicités/alertes jobs
- */
-const CONFIG_S1 = {
-    "blacklist": [
-        "jobalerts-noreply@linkedin.com",
-        "jobs-listings@linkedin.com",
-        "notifications-noreply@linkedin.com",
-        "no-reply@glassdoor.com"
-    ]
-};
-
-/**
  * SCRIPT 1 : Détection, Ajout et Enrichissement avec Logs détaillés
+ * Configuration dynamique via l'onglet "config"
  */
 function analyserMailsCandidaturesEnvoyees() {
     const nomF = "add_candidature";
-    const props = PropertiesService.getScriptProperties();
-    const sheetName = props.getProperty('SHEET_NAME');
+
+    // Utilisation de getParam pour récupérer le nom de la feuille de suivi
+    const sheetName = getParam('SHEET_NAME');
 
     let stats = {scannes: 0, ajouts: 0, enrichis: 0, details: []};
 
@@ -64,7 +54,7 @@ function analyserMailsCandidaturesEnvoyees() {
  * COLLECTE : Recherche Gmail (1 jours)
  */
 function collecterNouvellesCandidatures() {
-    const query = 'newer_than:1d -label:IA-Candidature-Ajoutée (confirmation OR received OR "candidature envoyée" OR "thank you for applying")';
+    const query = 'newer_than:2d -label:IA-Candidature-Ajoutée (confirmation OR received OR "candidature envoyée" OR "thank you for applying")';
     return GmailApp.search(query, 0, 15);
 }
 
@@ -76,14 +66,18 @@ function traiterNouvelEmailAmeliore(thread, sheet, dataTableau) {
     const rawSender = message.getFrom().toLowerCase();
     const subject = message.getSubject();
     const body = message.getPlainBody();
-    const snippet = body.substring(0, 100).replace(/\n/g, " "); // Bribe du mail pour les logs
+    const snippet = body.substring(0, 100).replace(/\n/g, " ");
 
     console.log(`[SCAN] Sujet: "${subject}" | Expéditeur: ${rawSender}`);
     console.log(`       |_ Bribe: "${snippet}..."`);
 
-    // 1. FILTRE BLACKLIST
-    if (CONFIG_S1.blacklist.some(b => rawSender.includes(b))) {
-        console.log(`| - [IGNORE] Blacklist détectée (${rawSender}). Pas de label posé.`);
+    // 1. FILTRE BLACKLIST DYNAMIQUE (via getParam)
+    // On récupère la liste des emails configurés comme "Newsletters" dans l'onglet config
+    const emailsConfig = getParam('EMAILS_NEWSLETTERS') || "";
+    const blacklist = emailsConfig.split(',').map(e => e.trim().toLowerCase());
+
+    if (blacklist.some(b => b !== "" && rawSender.includes(b))) {
+        console.log(`| - [IGNORE] Blacklist dynamique détectée (${rawSender}). Pas de label posé.`);
         return {succes: false};
     }
 

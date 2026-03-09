@@ -1,28 +1,35 @@
 /**
  * SCRIPT 3 : Sourcing Universel d'Opportunités
  * LOGIQUE : Scan des newsletters, extraction multi-offres par IA, filtrage, archivage.
- * Utilise writeLog pour une journalisation condensée.
+ * CONFIGURATION : Entièrement pilotée par l'onglet "config" via getParam.
  */
 function analyserNewslettersOpportunites() {
     const nomF = "analyserNewsletters";
-    const props = PropertiesService.getScriptProperties();
-    const nomSheetDest = props.getProperty('SHEET_NEWSLETTER');
-    const nomSheetConfig = props.getProperty('SHEET_NEWSLETTER_CONFIG');
 
-    let stats = { mailsTraites: 0, count: 0, emailsVus: 0, details: [] };
+    // ⚙️ Récupération des noms d'onglets via getParam
+    const nomSheetDest = getParam('SHEET_NEWSLETTER');
+    const nomSheetConfig = getParam('SHEET_NEWSLETTER_CONFIG');
+
+    let stats = {mailsTraites: 0, count: 0, emailsVus: 0, details: []};
     let erreursLocales = [];
 
-    console.log(">>> [DEBUT] Lancement du Sourcing Universel (Nettoyage Systématique)...");
+    console.log(">>> [DEBUT] Lancement du Sourcing Universel (Mode Config Sheet)...");
 
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         const sheetDest = ss.getSheetByName(nomSheetDest);
         const sheetConfig = ss.getSheetByName(nomSheetConfig);
 
-        if (!sheetDest || !sheetConfig) throw new Error("Onglets destination ou config introuvables.");
+        if (!sheetDest || !sheetConfig) {
+            throw new Error(`Onglets "${nomSheetDest}" ou "${nomSheetConfig}" introuvables.`);
+        }
 
+        // Lecture de la configuration métier/emails
         const config = recupererConfiguration(sheetConfig);
-        if (config.emails.length === 0) return;
+        if (config.emails.length === 0) {
+            console.warn("⚠️ Aucune adresse email source trouvée dans la config.");
+            return;
+        }
 
         const threads = collecterMailsNewsletters(config.emails);
         stats.mailsTraites = threads.length;
@@ -34,16 +41,17 @@ function analyserNewslettersOpportunites() {
 
             for (const thread of threads) {
                 try {
-                    Utilities.sleep(2000);
+                    Utilities.sleep(2000); // Pause pour éviter le spam API
                     const resultat = traiterUneNewsletter(thread, sheetDest, config);
 
+                    // Archivage pour ne pas traiter deux fois
                     thread.addLabel(label);
                     thread.moveToArchive();
                     console.log(`| - [NETTOYAGE] Mail "${thread.getFirstMessageSubject()}" labellisé et archivé.`);
-                    
+
                     if (resultat && resultat.nbOffres > 0) {
                         stats.count += resultat.nbOffres;
-                        stats.details.push(`${resultat.nbOffres} offres (${thread.getFirstMessageSubject().substring(0,30)}...)`);
+                        stats.details.push(`${resultat.nbOffres} offres (${thread.getFirstMessageSubject().substring(0, 30)}...)`);
                     }
                 } catch (err) {
                     erreursLocales.push(`Mail "${thread.getFirstMessageSubject()}" : ${err.toString()}`);
@@ -52,34 +60,33 @@ function analyserNewslettersOpportunites() {
             }
         }
 
-          const messageAction = construireResumeFinal("Ajout", stats);
-          console.log(">>> [RESUME FINAL] : " + messageAction);
-          writeLog(nomF, messageAction, erreursLocales.length > 0 ? "Oui" : "Non", erreursLocales.join(" | "));
-        
+        const messageAction = construireResumeFinal("Ajout", stats);
+        console.log(">>> [RESUME FINAL] : " + messageAction);
+
+        // Journalisation dans l'onglet logs
+        writeLog(nomF, messageAction, erreursLocales.length > 0 ? "Oui" : "Non", erreursLocales.join(" | "));
 
     } catch (e) {
-        writeLog(nomF, "Erreur critique Sourcing", "Oui", e.toString());
         console.error("!!! [ERREUR S3] : " + e.toString());
+        writeLog(nomF, "Erreur critique Sourcing", "Oui", e.toString());
     }
 }
 
 /**
- * SOUS-FONCTION : Analyse d'un mail avec Détection de Langue
+ * SOUS-FONCTION : Analyse d'un mail avec Détection de Langue et Prompt IA
  */
 function traiterUneNewsletter(thread, sheetDest, config) {
     const message = thread.getMessages().pop();
     const corps = message.getPlainBody();
     const sujet = message.getSubject();
 
-    // --- DETECTION DE LA LANGUE (Basée sur le contenu du mail) ---
-    // On cherche des mots clés anglais fréquents dans les newsletters de job
+    // DETECTION DE LA LANGUE
     const keywordsEN = ["job", "apply", "hiring", "location", "salary", "full-time", "remote"];
     const textSnippet = (sujet + " " + corps).toLowerCase();
     const isEnglish = keywordsEN.some(word => textSnippet.includes(word));
-    
+
     console.log(`| - [LANGUE] ${isEnglish ? "Anglais détecté" : "Français détecté"} pour : ${sujet}`);
 
-    // --- ADAPTATION DU PROMPT ---
     let prompt = "";
     const flexStr = config.flexibilite === "Strict" ? "STRICT" : "FLEXIBLE";
 
@@ -102,12 +109,13 @@ function traiterUneNewsletter(thread, sheetDest, config) {
         - COMPÉTENCES : ${config.competences.join(", ")}
         
         RÈGLES :
-        1. Mode : ${flexStr}. Si Flexible, accepte les synonymes (ex: Développeur = Software Engineer).
+        1. Mode : ${flexStr}. Si Flexible, accepte les synonymes.
         2. Réponds UNIQUEMENT en JSON : {"offres": [{"entreprise": "Nom", "poste": "Titre", "lieu": "Ville/Remote", "stack": "Technos", "lien": "URL"}]}
         
         Mail : ${corps.substring(0, 4000)}`;
     }
 
+    // Appel au moteur central (qui utilise getParam pour la clé et le modèle)
     const analyse = callGeminiCentral(prompt);
     if (!analyse || !analyse.offres || analyse.offres.length === 0) return {nbOffres: 0};
 
@@ -134,8 +142,6 @@ function traiterUneNewsletter(thread, sheetDest, config) {
     return {nbOffres: count, info: `${count} offres dans "${sujet}"`};
 }
 
-// Les autres sous-fonctions (recupererConfiguration, collecterMailsNewsletters, estDoublonSourcing) restent inchangées.
-
 /**
  * HELPER : Vérification des doublons (Entreprise + Poste)
  */
@@ -159,14 +165,16 @@ function recupererConfiguration(sheet) {
         if (data[i][0]) config.cibles.push(data[i][0]);
         if (data[i][1]) config.contrats.push(data[i][1]);
         if (data[i][2]) config.competences.push(data[i][2]);
+        // Les emails sources sont en colonne D (index 3)
         if (data[i][3]) config.emails.push(data[i][3]);
+        // La flexibilité est en colonne E (index 4)
         if (i === 1 && data[i][4]) config.flexibilite = data[i][4];
     }
     return config;
 }
 
 /**
- * SOUS-FONCTION : Recherche Gmail ciblée
+ * SOUS-FONCTION : Recherche Gmail ciblée basée sur les emails de l'onglet config
  */
 function collecterMailsNewsletters(emails) {
     const queryEmails = emails.map(e => `from:${e}`).join(" OR ");

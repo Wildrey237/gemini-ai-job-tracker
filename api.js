@@ -1,10 +1,11 @@
 /**
- * MOTEUR IA CENTRALISÉ (Version Stable Corrigée)
+ * MOTEUR IA CENTRALISÉ (Version Pilotée par l'onglet Config)
  */
 function callGeminiCentral(promptText) {
-    const props = PropertiesService.getScriptProperties();
-    const apiKey = props.getProperty('GEMINI_KEY');
-    const model = props.getProperty('MODEL_NAME');
+    const apiKey = getParam('GEMINI_KEY');
+
+    // ⚙️ Le nom du modèle est désormais récupéré depuis l'onglet "config" via getParam
+    const model = getParam('MODEL_NAME') || 'gemini-2.5-flash';
 
     // Validation de la présence de la clé API
     if (!apiKey) {
@@ -12,6 +13,7 @@ function callGeminiCentral(promptText) {
         return null;
     }
 
+    // Construction de l'URL avec le modèle dynamique
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
     const payload = {
@@ -38,7 +40,7 @@ function callGeminiCentral(promptText) {
         if (code !== 200) {
             if (code === 429) {
                 console.warn("⚠️ Quota dépassé (Rate Limit). Le script va s'arrêter pour sécurité.");
-                console.warn(content)
+                console.warn(content);
             } else if (code === 401 || code === 403) {
                 console.error("❌ Problème d'authentification ou Clé API invalide.");
             } else {

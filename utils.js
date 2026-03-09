@@ -100,3 +100,49 @@ function creerEvenementCalendrier(entreprise, rdv, mailLink) {
         console.error("Erreur Calendrier: " + e);
     }
 }
+
+/**
+ * Récupère une configuration depuis l'onglet "config" (Tableau Clé/Valeur)
+ */
+function getParam(cle) {
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const sheetConfig = ss.getSheetByName('config');
+        if (!sheetConfig) return null;
+
+        const data = sheetConfig.getDataRange().getValues();
+        // On parcourt la colonne A pour trouver la clé et on renvoie la colonne B
+        for (let i = 0; i < data.length; i++) {
+            if (data[i][0] === cle) {
+                return data[i][1];
+            }
+        }
+    } catch (e) {
+        console.error("Erreur lecture Param : " + cle);
+    }
+    return null;
+}
+
+/**
+ * ÉCRITURE D'UN PARAMÈTRE (setParam)
+ * Cherche la clé en colonne A et écrit la valeur en colonne B
+ */
+function setParam(cle, valeur) {
+    try {
+        const ss = SpreadsheetApp.getActiveSpreadsheet();
+        const sheetConfig = ss.getSheetByName('config');
+        if (!sheetConfig) return;
+
+        const data = sheetConfig.getDataRange().getValues();
+        for (let i = 0; i < data.length; i++) {
+            if (data[i][0] === cle) {
+                sheetConfig.getRange(i + 1, 2).setValue(valeur);
+                return;
+            }
+        }
+        // Si la clé n'existe pas encore, on l'ajoute
+        sheetConfig.appendRow([cle, valeur]);
+    } catch (e) {
+        console.error("Erreur setParam : " + e.toString());
+    }
+}

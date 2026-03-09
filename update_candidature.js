@@ -1,37 +1,38 @@
 /**
  * SCRIPT 2 : Analyse des Réponses et Mise à jour du Suivi
- * Mise à jour : Blacklist dynamique via l'onglet Config.
+ * Mise à jour : Full Sheet Config (getParam) et Blacklist dynamique.
  */
 function analyserMailsReponsesRecues() {
     const nomF = "update_candidature";
-    const props = PropertiesService.getScriptProperties();
-    const nomSheet = props.getProperty('SHEET_NAME');
-    const nomSheetConfig = props.getProperty('SHEET_NEWSLETTER_CONFIG') || 'config';
+
+    // ⚙️ Récupération des paramètres via l'onglet "config"
+    const nomSheet = getParam('SHEET_NAME');
+    const nomSheetConfig = getParam('SHEET_NEWSLETTER_CONFIG');
 
     let stats = {
-        emailsVus: 0, 
-        count: 0, 
-        emailsScannes: 0, 
-        majEffectuees: 0, 
-        alertesEnvoyees: 0, 
+        emailsVus: 0,
+        count: 0,
+        emailsScannes: 0,
+        majEffectuees: 0,
+        alertesEnvoyees: 0,
         details: []
     };
     let alertesManuelles = [];
 
-    console.log(">>> [DEBUT] Lancement du chasseur de réponses (V4 - Config Dynamic Blacklist)...");
+    console.log(">>> [DEBUT] Lancement du chasseur de réponses...");
 
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         const sheet = ss.getSheetByName(nomSheet);
         const sheetConfig = ss.getSheetByName(nomSheetConfig);
 
-        if (!sheet) throw new Error(`Feuille ${nomSheet} introuvable.`);
-        if (!sheetConfig) throw new Error(`Feuille de configuration ${nomSheetConfig} introuvable.`);
+        if (!sheet) throw new Error(`Feuille "${nomSheet}" introuvable.`);
+        if (!sheetConfig) throw new Error(`Feuille de configuration "${nomSheetConfig}" introuvable.`);
 
         // 1. RECUPERATION DE LA CONFIGURATION (Pour la Blacklist dynamique)
         const configSourcing = recupererConfiguration(sheetConfig);
         const blacklistDynamique = configSourcing.emails.map(e => e.toLowerCase().trim());
-        console.log(`🚫 [BLACKLIST] ${blacklistDynamique.length} emails de newsletters seront ignorés.`);
+        console.log(`🚫 [BLACKLIST] ${blacklistDynamique.length} sources de newsletters ignorées.`);
 
         // 2. DATA : Récupérer les entreprises "En attente"
         const lastRow = sheet.getLastRow();
@@ -56,7 +57,7 @@ function analyserMailsReponsesRecues() {
             for (const thread of threads) {
                 Utilities.sleep(2000); // Anti-429
 
-                // On passe la blacklist dynamique au traitement
+                // Traitement avec la blacklist dynamique
                 const resultat = traiterUnFilOptimise(thread, sheet, entreprisesEnAttente, blacklistDynamique);
 
                 if (resultat && resultat.succes) {
@@ -76,7 +77,8 @@ function analyserMailsReponsesRecues() {
 
         const messageExcel = construireResumeFinal("Mise à jour", stats);
         const msgErreurLien = alertesManuelles.length > 0 ? "Alertes : " + alertesManuelles.join(", ") : "";
-        
+
+        // Journalisation identique à l'original
         writeLog(nomF, messageExcel, "Non", msgErreurLien);
 
         if (alertesManuelles.length > 0 && typeof envoyerMailAlerteGroupee === "function") {
@@ -84,16 +86,16 @@ function analyserMailsReponsesRecues() {
         }
 
     } catch (e) {
-        console.error("!!! [ERREUR] : " + e.toString());
+        console.error("!!! [ERREUR S2] : " + e.toString());
         writeLog(nomF, "ERREUR EXECUTION", "Oui", e.toString());
     }
 }
 
 /**
- * COLLECTE : Filtre Gmail
+ * COLLECTE : Filtre Gmail basé sur les noms d'entreprises du Sheet
  */
 function collecterEmailsFiltres(entreprises) {
-    const periode = "1d";
+    const periode = "2d";
     const labelAjoute = "IA-Candidature-Ajoutée";
     const labelsResultats = '(-label:IA-Réponse-Refusée -label:IA-Réponse-Entretien -label:IA-Réponse-En-Cours -label:IA-Réponse-Acceptée)';
 
@@ -114,7 +116,7 @@ function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente, blacklist) {
     const sujet = lastMessage.getSubject();
     const corps = lastMessage.getPlainBody();
 
-    // --- FILTRE : BLACKLIST DYNAMIQUE (Depuis Config) ---
+    // FILTRE : BLACKLIST DYNAMIQUE
     const estBlackliste = blacklist.some(email => emailExpediteur.includes(email));
     if (estBlackliste) {
         console.log(`| - [SKIP] Blacklist Config détectée : ${emailExpediteur}`);
@@ -123,7 +125,7 @@ function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente, blacklist) {
 
     console.log(`[ANALYSE] Mail de : ${emailExpediteur} | Sujet : ${sujet}`);
 
-    // A. IA : Extraction du Verdict
+    // IA : Extraction (Utilise callGeminiCentral qui utilise getParam pour la clé API)
     const prompt = `Analyse ce mail de recrutement. 
   1. Identifie l'entreprise (ignore les plateformes type LinkedIn). 
   2. Verdict : "Refusé", "Entretien", "Accepté" ou "En cours".
@@ -134,7 +136,7 @@ function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente, blacklist) {
     const analyse = callGeminiCentral(prompt);
     if (!analyse || !analyse.entreprise) return {succes: false};
 
-    // B. MATCHING NORMALISÉ
+    // MATCHING NORMALISÉ
     let cible = null;
     const nomIA = normaliser(analyse.entreprise);
     const sujetN = normaliser(sujet);
@@ -153,7 +155,7 @@ function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente, blacklist) {
 
     const dateJ = Utilities.formatDate(new Date(), "GMT+1", "dd/MM/yyyy");
 
-    // C. ACTIONS
+    // ACTIONS
     if (cible) {
         sheet.getRange(cible.ligne, 4).setValue(analyse.verdict);
         sheet.getRange(cible.ligne, 9).setValue(dateJ);
@@ -167,11 +169,11 @@ function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente, blacklist) {
                 creerEvenementCalendrier(analyse.entreprise, rdv, thread.getPermalink());
                 note += ` | 📅 RDV : ${rdv.date} à ${rdv.heure}`;
             }
-            rangeLigne.setBackground("#cfe2ff");
+            rangeLigne.setBackground("#cfe2ff"); // Bleu
         } else if (analyse.verdict === "Refusé") {
-            rangeLigne.setBackground("#f8d7da");
+            rangeLigne.setBackground("#f8d7da"); // Rouge
         } else if (analyse.verdict === "Accepté") {
-            rangeLigne.setBackground("#d4edda");
+            rangeLigne.setBackground("#d4edda"); // Vert
         }
 
         const oldNote = sheet.getRange(cible.ligne, 6).getValue();
