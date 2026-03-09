@@ -181,6 +181,23 @@ The sheet configured by `SHEET_NEWSLETTER_CONFIG` controls AI filtering without 
 
 Tip: use one value per cell and repeat rows to add more roles/contracts/skills/sources.
 
+## ⚙️ Runtime Parameters (`config` sheet)
+
+The project now includes parameter helpers in `utils.js`:
+
+- `getParam(key)`
+- `setParam(key, value)`
+
+`callGeminiCentral` (`api.js`) reads AI runtime parameters via `getParam` from the `config` sheet key/value table:
+
+- key `GEMINI_KEY`
+- key `MODEL_NAME` (optional, default: `gemini-2.5-flash`)
+
+Expected format in `config`:
+
+- column A: parameter key
+- column B: parameter value
+
 ## 📑 Main Sheet Structure (application tracking)
 
 If you start from an empty Google Sheet, create columns in this exact order:
@@ -221,7 +238,7 @@ For the destination sheet that stores sourced offers, use this order:
 
 - local-first approach within Google Workspace
 - no external database managed by the project
-- API key stored in Script Properties (`GEMINI_KEY`)
+- API key used by AI connector read from `config` via `getParam('GEMINI_KEY')`
 - triggers can be disabled and API key can be removed from the menu
 
 Central AI connector: `api.js`
@@ -255,7 +272,7 @@ Automatic maintenance: periodic cleanup via `maintenanceNettoyageLogs`.
 - `logger.js`: universal logging (`writeLog`, `construireResumeFinal`).
 - `maintenance.js`: maintenance routines.
 
-### Script Properties used
+### Runtime Parameters Used (`config` sheet)
 
 - `GEMINI_KEY`
 - `MODEL_NAME`
@@ -264,6 +281,8 @@ Automatic maintenance: periodic cleanup via `maintenanceNettoyageLogs`.
 - `IS_RUNNING`
 - `SHEET_NEWSLETTER`
 - `SHEET_NEWSLETTER_CONFIG`
+
+Note: these parameters are read/written through `getParam` and `setParam` (key/value table in the `config` sheet).
 
 ### Gmail labels used
 
@@ -292,10 +311,10 @@ Note: these labels are also used in Gmail queries to exclude already processed e
 If you keep seeing "An analysis is already running" while nothing is actually running:
 
 1. Open `Extensions > Apps Script`, then open `Executions` and verify there is no active run.
-2. Open `Project Settings` and go to `Script properties`.
-3. Find the key `IS_RUNNING`.
-4. Delete the key, or set its value to `false`.
-5. Go back to the sheet and run an action again from the `🚀 AI Job Tracker` menu.
+2. Open the workbook `config` sheet.
+3. Find key `IS_RUNNING` in column A.
+4. Set its value in column B to `false`.
+5. Run the action again from the `🚀 AI Job Tracker` menu.
 
 ---
 

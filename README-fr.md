@@ -181,6 +181,23 @@ L'onglet configure via `SHEET_NEWSLETTER_CONFIG` permet de piloter l'IA sans tou
 
 Conseil : mettez une valeur par cellule et répétez la ligne pour ajouter plusieurs métiers/contrats/compétences/sources.
 
+## ⚙️ Parametres runtime (onglet `config`)
+
+Le projet inclut maintenant des helpers de parametres dans `utils.js` :
+
+- `getParam(cle)`
+- `setParam(cle, valeur)`
+
+`callGeminiCentral` (`api.js`) lit les parametres IA via `getParam` depuis une table cle/valeur dans l'onglet `config` :
+
+- cle `GEMINI_KEY`
+- cle `MODEL_NAME` (optionnelle, valeur par defaut : `gemini-2.5-flash`)
+
+Format attendu dans `config` :
+
+- colonne A : cle du parametre
+- colonne B : valeur du parametre
+
 ## 📑 Structure de l'onglet principal (suivi candidatures)
 
 Si vous partez d'un Google Sheet vide, creez les colonnes dans cet ordre :
@@ -221,7 +238,7 @@ Pour l'onglet destination des offres issues des newsletters, utilisez cet ordre 
 
 - approche local-first sur Google Workspace
 - aucune base externe geree par le projet
-- cle API stockee dans Script Properties (`GEMINI_KEY`)
+- cle API utilisee par le connecteur IA lue depuis `config` via `getParam('GEMINI_KEY')`
 - desactivation des triggers et suppression de cle disponibles depuis le menu
 
 Script API central : `api.js`
@@ -255,7 +272,7 @@ Maintenance automatique : nettoyage periodique des logs via `maintenanceNettoyag
 - `logger.js` : journalisation universelle (`writeLog`, `construireResumeFinal`).
 - `maintenance.js` : routines de maintenance.
 
-### Script Properties utilisees
+### Parametres runtime utilises (onglet `config`)
 
 - `GEMINI_KEY`
 - `MODEL_NAME`
@@ -264,6 +281,8 @@ Maintenance automatique : nettoyage periodique des logs via `maintenanceNettoyag
 - `IS_RUNNING`
 - `SHEET_NEWSLETTER`
 - `SHEET_NEWSLETTER_CONFIG`
+
+Note : ces parametres sont lus/ecrits via `getParam` et `setParam` (table cle/valeur dans l'onglet `config`).
 
 ### Label Gmail utilise
 
@@ -292,10 +311,10 @@ Note : ces labels sont aussi utilises dans les requetes Gmail pour exclure les e
 Si vous voyez en boucle "Une analyse est deja en cours" alors qu'aucun script ne tourne :
 
 1. Ouvrez `Extensions > Apps Script` puis `Executions` et verifiez qu'aucune execution n'est encore active.
-2. Ouvrez `Project Settings` puis `Script properties`.
-3. Recherchez la cle `IS_RUNNING`.
-4. Supprimez la cle, ou remplacez sa valeur par `false`.
-5. Revenez au Sheet puis relancez une action depuis le menu `🚀 AI Job Tracker`.
+2. Ouvrez l'onglet `config` du classeur.
+3. Recherchez la ligne de cle `IS_RUNNING` (colonne A).
+4. Mettez sa valeur (colonne B) a `false`.
+5. Revenez au menu `🚀 AI Job Tracker` et relancez l'action.
 
 ---
 
