@@ -179,7 +179,7 @@ function recupererConfiguration(sheet) {
 function collecterMailsNewsletters(emails) {
     const queryEmails = emails.map(e => `from:${e}`).join(" OR ");
     const labelExclu = "Newslatter-jobs-extraites";
-    const query = `newer_than:1d -label:${labelExclu} (${queryEmails})`;
+    const query = `newer_than:7d -label:${labelExclu} (${queryEmails})`;
     console.log(`[QUERY GMAIL] : ${query}`);
     return GmailApp.search(query, 0, 10);
 }
