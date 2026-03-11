@@ -5,6 +5,18 @@
 ![Gemini 2.5 Flash](https://img.shields.io/badge/AI-Gemini%202.5%20Flash-1a73e8)
 ![Gmail](https://img.shields.io/badge/Gmail-Inbox%20Zero-EA4335?logo=gmail&logoColor=white)
 
+## ✅ Start here: project result folder (Google Drive)
+
+Folder link:
+https://drive.google.com/drive/folders/1pRYi3Nss2Gy3bquejA82tTFJLf0kGcnt?usp=share_link
+
+Before using the project:
+- Copy the file or the full folder into your own Google Drive.
+- The folder includes the usage guide.
+- The folder also includes the project Google Sheet (with the Apps Script code).
+
+## Project Overview
+
 AI Job Tracker turns Google Sheets into a smart personal ATS.
 
 The system automates:
@@ -15,6 +27,10 @@ The system automates:
 - automatic job newsletter detection
 
 Everything runs directly in Google Workspace with Gmail + Sheets + Apps Script + Gemini.
+
+## 💡 Why this project
+
+Modern job search is repetitive, time-consuming, and hard to track. AI Job Tracker turns Gmail + Sheets into a smart ATS to centralize follow-up and save time.
 
 ---
 
@@ -341,10 +357,4 @@ If you keep seeing "An analysis is already running" while nothing is actually ru
 
 ## 📄 License
 
-To be defined (add a `LICENSE` file before open-source publication).
-
----
-
-## 💡 Why this project
-
-Modern job search is repetitive, time-consuming, and hard to track. AI Job Tracker turns Gmail + Sheets into a smart ATS to centralize follow-up and save time.
+This project is released under the MIT License. See `LICENSE`.

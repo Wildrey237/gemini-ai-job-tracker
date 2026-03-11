@@ -5,6 +5,17 @@
 ![Gemini 2.5 Flash](https://img.shields.io/badge/IA-Gemini%202.5%20Flash-1a73e8)
 ![Gmail](https://img.shields.io/badge/Gmail-Inbox%20Zero-EA4335?logo=gmail&logoColor=white)
 
+## ✅ Commencer ici : dossier resultat du projet (Google Drive)
+
+Dossier de resultat du projet :
+https://drive.google.com/drive/folders/1pRYi3Nss2Gy3bquejA82tTFJLf0kGcnt?usp=share_link
+
+Important :
+- Copier le fichier ou l'ensemble du dossier dans votre propre Google Drive avant utilisation.
+- Le dossier contient le mode d'emploi ainsi que le Google Sheet qui contient le code du projet.
+
+## Presentation du projet
+
 AI Job Tracker transforme Google Sheets en ATS personnel intelligent.
 
 Le systeme automatise :
@@ -15,6 +26,10 @@ Le systeme automatise :
 - la detection automatique de newsletters emploi
 
 Le tout fonctionne dans Google Workspace avec Gmail + Sheets + Apps Script + Gemini.
+
+## 💡 Pourquoi ce projet
+
+La recherche d'emploi est repetitive, chronophage et difficile a piloter. Ce projet transforme Gmail + Sheets en ATS intelligent pour centraliser le suivi et gagner du temps.
 
 ---
 
@@ -209,8 +224,8 @@ Si vous partez d'un Google Sheet vide, creez les colonnes dans cet ordre :
 | C | Poste |
 | D | Reponse |
 | E | Lieux |
-| F | Remaque |
-| G | postulé ? |
+| F | Remarque |
+| G | Postule ? |
 | H | Lien |
 | I | Date de reponse |
 | J | Nb Messages |
@@ -341,10 +356,6 @@ Si vous voyez en boucle "Une analyse est deja en cours" alors qu'aucun script ne
 
 ## 📄 Licence
 
-A definir (ajouter un fichier `LICENSE` pour publication open-source).
+Ce projet est publie sous licence MIT. Voir le fichier `LICENSE`.
 
 ---
-
-## 💡 Pourquoi ce projet
-
-La recherche d'emploi est repetitive, chronophage et difficile a piloter. Ce projet transforme Gmail + Sheets en ATS intelligent pour centraliser le suivi et gagner du temps.
