@@ -146,3 +146,11 @@ function setParam(cle, valeur) {
         console.error("Erreur setParam : " + e.toString());
     }
 }
+
+function normaliserS1(t) {
+  if (!t) return "";
+  return t.toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/(hiring team|team|group|sas|inc|corp|ltd)/gi, "")
+    .trim();
+}

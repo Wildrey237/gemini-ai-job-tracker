@@ -42,6 +42,7 @@ function onOpen() {
 
     // ... reste du menu ...
     menu.addSeparator()
+        .addItem('📥 Analyser Candidatures (Manuel)', 'menuLancerCandidatures')
         .addItem('🔍 Lancer Sourcing (Manuel)', 'menuLancerSourcing')
         .addItem('🔄 Actualiser Réponses (Manuel)', 'menuLancerUpdate')
         .addItem('🤖 Détecter nouvelles Newsletters (Manuel)', 'menuLancerAutoConfig')
@@ -74,6 +75,7 @@ function uiInstallerAutomatisation() {
 
     try {
         // Définition du planning de maintenance et de scan
+        
         ScriptApp.newTrigger('analyserMailsCandidaturesEnvoyees').timeBased().everyDays(1).atHour(0).create();
         ScriptApp.newTrigger('analyserMailsReponsesRecues').timeBased().everyDays(1).atHour(3).create();
         ScriptApp.newTrigger('analyserNewslettersOpportunites').timeBased().everyDays(1).atHour(6).create();
@@ -159,6 +161,7 @@ function uiSupprimerCleAPI() {
 function menuLancerSourcing() { executerAvecVerrou('analyserNewslettersOpportunites', 'Sourcing'); }
 function menuLancerUpdate() { executerAvecVerrou('analyserMailsReponsesRecues', 'Update'); }
 function menuLancerAutoConfig() { executerAvecVerrou('detecterEtConfigurerNewsletters', 'Config IA'); }
+function menuLancerCandidatures() { executerAvecVerrou('analyserMailsCandidaturesEnvoyees', 'Analyse Envois'); }
 
 /**
  * Exécute une fonction de sourcing ou d'analyse en empêchant les lancements multiples.
