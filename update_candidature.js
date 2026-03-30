@@ -95,15 +95,24 @@ function analyserMailsReponsesRecues() {
  * COLLECTE : Filtre Gmail basé sur les noms d'entreprises du Sheet
  */
 function collecterEmailsFiltres(entreprises) {
-    const periode = "2d";
-    const labelAjoute = "IA-Candidature-Ajoutée";
+    const periode = "5d";
     const labelsResultats = '(-label:IA-Réponse-Refusée -label:IA-Réponse-Entretien -label:IA-Réponse-En-Cours -label:IA-Réponse-Acceptée)';
 
-    const listeNoms = entreprises.map(e => `"${e.nom}"`).join(" OR ");
-    const query = `newer_than:${periode} -label:${labelAjoute} ${labelsResultats} (${listeNoms})`;
+    const noms = entreprises
+        .map(e => e.nom && e.nom.toString().trim())
+        .filter(Boolean);
+
+    if (noms.length === 0) {
+        console.log("[QUERY GMAIL] Aucun nom d'entreprise à chercher.");
+        return [];
+    }
+
+    const listeNoms = noms.map(n => `"${n}"`).join(" OR ");
+
+    const query = `newer_than:${periode} ${labelsResultats} (${listeNoms})`;
 
     console.log(`[QUERY GMAIL] : ${query}`);
-    return GmailApp.search(query, 0, 15);
+    return GmailApp.search(query, 0, 30);
 }
 
 /**
@@ -125,25 +134,59 @@ function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente, blacklist) {
 
     console.log(`[ANALYSE] Mail de : ${emailExpediteur} | Sujet : ${sujet}`);
 
-    // IA : Extraction (Utilise callGeminiCentral qui utilise getParam pour la clé API)
-    const prompt = `Analyse ce mail de recrutement. 
-  1. Identifie l'entreprise (ignore les plateformes type LinkedIn). 
-  2. Verdict : "Refusé", "Entretien", "Accepté" ou "En cours".
-  Expéditeur : ${emailExpediteur} | Sujet : ${sujet}
-  Mail : ${corps}
-  Réponds UNIQUEMENT en JSON : {"entreprise": "Nom", "verdict": "Statut", "details": "Résumé court"}`;
+    const prompt = `Analyse ce mail de recrutement.
 
+1. Identifie l'entreprise réelle.
+2. Classe ce mail dans UNE SEULE catégorie parmi :
+   - "Refusé" = rejet clair
+   - "Entretien" = proposition ou convocation à un entretien
+   - "Accepté" = offre, sélection finale, acceptance claire
+   - "Confirmation" = accusé de réception, candidature reçue, dossier en cours d'étude, patience, traitement en cours
+   - "Autre" = tout le reste
+
+Expéditeur : ${emailExpediteur}
+Sujet : ${sujet}
+Mail : ${corps}
+
+Réponds UNIQUEMENT en JSON valide :
+{"entreprise":"Nom","verdict":"Categorie","details":"Résumé court"}`;
+    
     const analyse = callGeminiCentral(prompt);
-    if (!analyse || !analyse.entreprise) return {succes: false};
+    if (!analyse || !analyse.entreprise || !analyse.verdict) {
+        console.log("[SKIP] Analyse IA vide ou incomplète.");
+        return {succes: false};
+    }
+
+    const verdict = normaliserTexte(analyse.verdict);
+
+    // RÈGLE MÉTIER : on ignore totalement les confirmations / en cours / autres
+    const verdictsIgnorer = ["confirmation", "en cours", "autre"];
+    if (verdictsIgnorer.includes(verdict)) {
+        console.log(`[SKIP] Mail ignoré car verdict = ${analyse.verdict}`);
+        return {
+            succes: false,
+            ignore: true,
+            info: `Mail ignoré (${analyse.verdict}) : ${analyse.entreprise}`
+        };
+    }
+
+    // On n'autorise les mises à jour QUE pour ces cas
+    const verdictsAutorises = ["refuse", "refusé", "entretien", "accepte", "accepté"];
+    const verdictValide = verdictsAutorises.includes(verdict);
+
+    if (!verdictValide) {
+        console.log(`[SKIP] Verdict non autorisé : ${analyse.verdict}`);
+        return {succes: false};
+    }
 
     // MATCHING NORMALISÉ
     let cible = null;
-    const nomIA = normaliser(analyse.entreprise);
-    const sujetN = normaliser(sujet);
-    const expN = normaliser(emailExpediteur);
+    const nomIA = normaliserTexte(analyse.entreprise);
+    const sujetN = normaliserTexte(sujet);
+    const expN = normaliserTexte(emailExpediteur);
 
     for (let item of entreprisesEnAttente) {
-        const nomS = normaliser(item.nom);
+        const nomS = normaliserTexte(item.nom);
         const match = nomIA.includes(nomS) || nomS.includes(nomIA) || sujetN.includes(nomS) || expN.includes(nomS);
 
         if (match) {
@@ -153,39 +196,50 @@ function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente, blacklist) {
         }
     }
 
-    const dateJ = Utilities.formatDate(new Date(), "GMT+1", "dd/MM/yyyy");
-
-    // ACTIONS
-    if (cible) {
-        sheet.getRange(cible.ligne, 4).setValue(analyse.verdict);
-        sheet.getRange(cible.ligne, 9).setValue(dateJ);
-
-        let note = `[${dateJ}] ${analyse.details}`;
-
-        const rangeLigne = sheet.getRange(cible.ligne, 1, 1, 9);
-        if (analyse.verdict === "Entretien") {
-            const rdv = extraireDateCalendrier(corps);
-            if (rdv && rdv.date !== "inconnu") {
-                creerEvenementCalendrier(analyse.entreprise, rdv, thread.getPermalink());
-                note += ` | 📅 RDV : ${rdv.date} à ${rdv.heure}`;
-            }
-            rangeLigne.setBackground("#cfe2ff"); // Bleu
-        } else if (analyse.verdict === "Refusé") {
-            rangeLigne.setBackground("#f8d7da"); // Rouge
-        } else if (analyse.verdict === "Accepté") {
-            rangeLigne.setBackground("#d4edda"); // Vert
-        }
-
-        const oldNote = sheet.getRange(cible.ligne, 6).getValue();
-        sheet.getRange(cible.ligne, 6).setValue(oldNote ? `${oldNote} | ${note}` : note);
-
-        appliquerLabelVerdict(thread, analyse.verdict);
-
-        return {succes: true, info: `${analyse.entreprise} (Ligne ${cible.ligne})`};
-    } else {
+    if (!cible) {
+        console.log(`[ALERTE] Aucune ligne trouvée pour ${analyse.entreprise}`);
         return {
             alerteMail: true,
             info: `Entreprise: ${analyse.entreprise} | Verdict: ${analyse.verdict} | Lien: ${thread.getPermalink()}`
         };
     }
+
+    const dateJ = Utilities.formatDate(new Date(), "GMT+1", "dd/MM/yyyy");
+
+    // Harmonisation des valeurs écrites dans la sheet
+    let statutFinal = analyse.verdict;
+    if (verdict === "refuse" || verdict === "refusé") statutFinal = "Refusé";
+    if (verdict === "entretien") statutFinal = "Entretien";
+    if (verdict === "accepte" || verdict === "accepté") statutFinal = "Accepté";
+
+    // Écriture UNIQUEMENT pour Refusé / Entretien / Accepté
+    sheet.getRange(cible.ligne, 4).setValue(statutFinal);
+    sheet.getRange(cible.ligne, 9).setValue(dateJ);
+
+    let note = `[${dateJ}] ${analyse.details}`;
+
+    const rangeLigne = sheet.getRange(cible.ligne, 1, 1, 9);
+
+    if (statutFinal === "Entretien") {
+        const rdv = extraireDateCalendrier(corps);
+        if (rdv && rdv.date !== "inconnu") {
+            creerEvenementCalendrier(analyse.entreprise, rdv, thread.getPermalink());
+            note += ` | RDV : ${rdv.date} à ${rdv.heure}`;
+        }
+        rangeLigne.setBackground("#cfe2ff");
+        appliquerLabelVerdict(thread, statutFinal);
+    } else if (statutFinal === "Refusé") {
+        rangeLigne.setBackground("#f8d7da");
+        appliquerLabelVerdict(thread, statutFinal);
+    } else if (statutFinal === "Accepté") {
+        rangeLigne.setBackground("#d4edda");
+        appliquerLabelVerdict(thread, statutFinal);
+    }
+
+    const oldNote = sheet.getRange(cible.ligne, 6).getValue();
+    sheet.getRange(cible.ligne, 6).setValue(oldNote ? `${oldNote} | ${note}` : note);
+
+    appliquerLabelVerdict(thread, statutFinal);
+
+    return {succes: true, info: `${analyse.entreprise} (${statutFinal}) - Ligne ${cible.ligne}`};
 }

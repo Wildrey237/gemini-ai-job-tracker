@@ -154,3 +154,39 @@ function normaliserS1(t) {
     .replace(/(hiring team|team|group|sas|inc|corp|ltd)/gi, "")
     .trim();
 }
+
+function appliquerLabelVerdict(thread, statut) {
+    const labels = {
+        "Refusé": "IA-Réponse-Refusée",
+        "Entretien": "IA-Réponse-Entretien",
+        "Accepté": "IA-Réponse-Acceptée"
+    };
+
+    // Supprimer anciens labels
+    const anciensLabels = [
+        "IA-Réponse-Refusée",
+        "IA-Réponse-Entretien",
+        "IA-Réponse-Acceptée",
+        "IA-Réponse-En-Cours"
+    ];
+
+    anciensLabels.forEach(nom => {
+        const label = GmailApp.getUserLabelByName(nom);
+        if (label) thread.removeLabel(label);
+    });
+
+    // Appliquer nouveau label seulement si valide
+    const labelName = labels[statut];
+    if (!labelName) {
+        console.log(`[LABEL] Aucun label appliqué pour statut = ${statut}`);
+        return;
+    }
+
+    let label = GmailApp.getUserLabelByName(labelName);
+    if (!label) {
+        label = GmailApp.createLabel(labelName);
+    }
+
+    thread.addLabel(label);
+    console.log(`[LABEL] ${labelName} appliqué`);
+}
