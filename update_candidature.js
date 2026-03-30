@@ -150,7 +150,7 @@ Mail : ${corps}
 
 Réponds UNIQUEMENT en JSON valide :
 {"entreprise":"Nom","verdict":"Categorie","details":"Résumé court"}`;
-    
+
     const analyse = callGeminiCentral(prompt);
     if (!analyse || !analyse.entreprise || !analyse.verdict) {
         console.log("[SKIP] Analyse IA vide ou incomplète.");

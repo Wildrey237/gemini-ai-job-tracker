@@ -56,19 +56,16 @@ function collecterNouvellesCandidatures() {
     let exclusionsDynamiques = "";
     try {
         const ss = SpreadsheetApp.getActiveSpreadsheet();
-        // On récupère le nom de l'onglet via la config (cellule B7 : "Parametres")
         const paramSheetName = getParam('SHEET_NEWSLETTER_CONFIG') || "Parametres";
         const paramSheet = ss.getSheetByName(paramSheetName);
 
         if (paramSheet) {
-            // On récupère les emails de la colonne D (Newsletters), à partir de la ligne 2
             const lastRow = paramSheet.getLastRow();
             if (lastRow >= 2) {
                 const emails = paramSheet.getRange(2, 4, lastRow - 1, 1).getValues()
-                    .flat() // Transforme le tableau 2D en liste simple
-                    .filter(email => email && email.toString().includes('@')); // Garde uniquement les emails valides
-                
-                // Formate pour Gmail : "-email1@test.com -email2@test.com"
+                    .flat()
+                    .filter(email => email && email.toString().includes('@'));
+
                 exclusionsDynamiques = emails.map(e => `-${e.trim()}`).join(' ');
             }
         }
@@ -76,18 +73,18 @@ function collecterNouvellesCandidatures() {
         console.warn("Impossible de charger la liste noire dynamique : " + e.message);
     }
 
-    // 2. Exclusions statiques (bruit publicitaire et erreurs précédentes)
-    const exclusionsStatiques = '-promotion -publicité -achat -facture -news -alertes -newsletter -"Fitness Park" -Cofidis';
+    // 2. Exclusions statiques (bruit publicitaire et spam)
+    const exclusionsStatiques = '-promotion -publicité -achat -facture -meeting -invitation -calendar -event -zoom -teams -meet -newsletter -"Fitness Park" -Cofidis -in:spam -category:promotions -category:social';
 
-    // 3. Mots-clés de recherche Bilingues (Français / Anglais)
-    const motsCles = '(confirmation OR received OR reçu OR candidature OR application OR "thank you" OR submitted OR "candidature envoyée")';
+    // 3. Mots-clés de recherche bilingues
+    const motsCles = '(confirmation OR received OR reçu OR candidature OR application OR "Thank you" OR submitted OR "candidature envoyée")';
 
     // 4. Construction de la requête finale
-    const query = `newer_than:2d -label:IA-Candidature-Ajoutée ${exclusionsStatiques} ${exclusionsDynamiques} ${motsCles}`;
-    
+    const query = `newer_than:2d in:inbox -label:IA-Candidature-Ajoutée -label:IA-Réponse-En-Cours ${exclusionsStatiques} ${exclusionsDynamiques} ${motsCles}`;
+
     console.log(">>> Requête Gmail générée : " + query);
-    
-    return GmailApp.search(query, 0, 15);
+
+    return GmailApp.search(query, 0, 200);
 }
 
 /**
@@ -98,7 +95,7 @@ function traiterNouvelEmailAmeliore(thread, sheet, dataTableau) {
     const rawSender = message.getFrom().toLowerCase();
     const subject = message.getSubject();
     const body = message.getPlainBody() || "";
-    
+
     // On utilise les 2500 premiers caractères pour l'IA (suffisant pour une détection)
     const contentToAnalyze = body.substring(0, 2500);
 
@@ -114,14 +111,37 @@ function traiterNouvelEmailAmeliore(thread, sheet, dataTableau) {
     }
 
     // 2. ANALYSE IA GEMINI
-    const prompt = `Analyse ce mail. Est-ce une confirmation de réception de candidature suite à un envoi de l'utilisateur ?
-    Expéditeur : "${rawSender}" | Sujet : "${subject}"
-    Réponds EXCLUSIVEMENT en JSON :
-    {"est_candidature": true, "entreprise": "Nom", "poste": "Titre", "lieu": "Ville", "lien": "URL_OFFRE"}
-    Contenu : ${contentToAnalyze}`;
+    const prompt = `
+Analyse ce mail de recrutement.
+
+Objectif :
+Déterminer si ce mail est un accusé de réception ou une confirmation liée à une candidature envoyée par l'utilisateur.
+
+Consignes :
+- "est_candidature" = true si le mail confirme qu'une candidature a bien été reçue ou enregistrée.
+- Extrais le nom réel de l'entreprise.
+- Extrais le poste si visible.
+- Extrais le lieu si visible, sinon "Inconnu".
+- Extrais le lien de l'offre si visible, sinon "".
+- Réponds UNIQUEMENT en JSON valide, sans texte autour.
+
+Format attendu :
+{
+  "est_candidature": true,
+  "entreprise": "Nom exact de l'entreprise",
+  "poste": "Titre du poste",
+  "lieu": "Ville ou Inconnu",
+  "lien": "URL ou vide"
+}
+
+Expéditeur : "${rawSender}"
+Sujet : "${subject}"
+Contenu :
+${contentToAnalyze}
+`;
 
     const data = callGeminiCentral(prompt);
-    
+
     if (!data || !data.est_candidature || !data.entreprise || data.entreprise === "Inconnu") {
         console.log(`| - [IA] Verdict: Pas une candidature valide.`);
         return {succes: false};
@@ -143,7 +163,7 @@ function traiterNouvelEmailAmeliore(thread, sheet, dataTableau) {
 
     const safe = (val) => (val && val !== "null" && val !== "undefined") ? val.toString().trim() : "Inconnu";
     const dateC = Utilities.formatDate(message.getDate(), "GMT+1", "dd/MM/yyyy");
-    
+
     // Création du bouton lien stylisé
     const urlLien = (data.lien && data.lien.includes("http")) ? data.lien : "";
     const boutonLien = urlLien ? `=HYPERLINK("${urlLien}"; "🔗 Accéder")` : "";
@@ -154,13 +174,13 @@ function traiterNouvelEmailAmeliore(thread, sheet, dataTableau) {
 
         if (statutActuel === "En attente" || statutActuel === "" || statutActuel.toString().includes("IF")) {
             console.log(`| - [ACTION] Enrichissement ligne ${ligneExistante}.`);
-            
+
             if (dataTableau[ligneExistante - 1][2] === "Inconnu") sheet.getRange(ligneExistante, 3).setValue(safe(data.poste));
             if (dataTableau[ligneExistante - 1][4] === "Inconnu") sheet.getRange(ligneExistante, 5).setValue(safe(data.lieu));
             if ((dataTableau[ligneExistante - 1][7] === "" || dataTableau[ligneExistante - 1][7] === "Inconnu") && boutonLien !== "") {
                 sheet.getRange(ligneExistante, 8).setValue(boutonLien);
             }
-            
+
             return {succes: true, type: "enrichissement", info: `Enrichi: ${data.entreprise}`};
         }
     }
@@ -170,18 +190,18 @@ function traiterNouvelEmailAmeliore(thread, sheet, dataTableau) {
     const formuleStatut = `=IF(G${nextRow}="oui"; IF(TODAY()-B${nextRow}>60; "Refusé"; "En attente"); "")`;
 
     console.log(`| - [ACTION] Ajout d'une nouvelle ligne pour "${data.entreprise}".`);
-    
+
     sheet.appendRow([
-        safe(data.entreprise), 
-        dateC, 
-        safe(data.poste), 
-        "", 
-        safe(data.lieu), 
-        "IA Auto-Détection", 
-        "oui", 
+        safe(data.entreprise),
+        dateC,
+        safe(data.poste),
+        "",
+        safe(data.lieu),
+        "IA Auto-Détection",
+        "oui",
         boutonLien
     ]);
-    
+
     sheet.getRange(nextRow, 4).setFormula(formuleStatut);
 
     return {succes: true, type: "ajout", info: `Ajouté: ${data.entreprise}`};
