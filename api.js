@@ -15,7 +15,7 @@ function callGeminiCentral(promptText) {
     const payload = {
         contents: [
             {
-                parts: [{text: promptText}]
+                parts: [{ text: promptText }]
             }
         ],
         generationConfig: {

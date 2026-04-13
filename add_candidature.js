@@ -81,10 +81,10 @@ function collecterNouvellesCandidatures() {
 
     // 4. Construction de la requête finale
     const query = `newer_than:2d in:inbox -label:IA-Candidature-Ajoutée -label:IA-Réponse-En-Cours ${exclusionsStatiques} ${exclusionsDynamiques} ${motsCles}`;
-
+    
     console.log(">>> Requête Gmail générée : " + query);
-
-    return GmailApp.search(query, 0, 200);
+    
+    return GmailApp.search(query, 0, 80);
 }
 
 /**
@@ -95,7 +95,7 @@ function traiterNouvelEmailAmeliore(thread, sheet, dataTableau) {
     const rawSender = message.getFrom().toLowerCase();
     const subject = message.getSubject();
     const body = message.getPlainBody() || "";
-
+    
     // On utilise les 2500 premiers caractères pour l'IA (suffisant pour une détection)
     const contentToAnalyze = body.substring(0, 2500);
 
@@ -111,7 +111,7 @@ function traiterNouvelEmailAmeliore(thread, sheet, dataTableau) {
     }
 
     // 2. ANALYSE IA GEMINI
-    const prompt = `
+  const prompt = `
 Analyse ce mail de recrutement.
 
 Objectif :
@@ -141,7 +141,7 @@ ${contentToAnalyze}
 `;
 
     const data = callGeminiCentral(prompt);
-
+    
     if (!data || !data.est_candidature || !data.entreprise || data.entreprise === "Inconnu") {
         console.log(`| - [IA] Verdict: Pas une candidature valide.`);
         return {succes: false};
@@ -163,7 +163,7 @@ ${contentToAnalyze}
 
     const safe = (val) => (val && val !== "null" && val !== "undefined") ? val.toString().trim() : "Inconnu";
     const dateC = Utilities.formatDate(message.getDate(), "GMT+1", "dd/MM/yyyy");
-
+    
     // Création du bouton lien stylisé
     const urlLien = (data.lien && data.lien.includes("http")) ? data.lien : "";
     const boutonLien = urlLien ? `=HYPERLINK("${urlLien}"; "🔗 Accéder")` : "";
@@ -174,13 +174,13 @@ ${contentToAnalyze}
 
         if (statutActuel === "En attente" || statutActuel === "" || statutActuel.toString().includes("IF")) {
             console.log(`| - [ACTION] Enrichissement ligne ${ligneExistante}.`);
-
+            
             if (dataTableau[ligneExistante - 1][2] === "Inconnu") sheet.getRange(ligneExistante, 3).setValue(safe(data.poste));
             if (dataTableau[ligneExistante - 1][4] === "Inconnu") sheet.getRange(ligneExistante, 5).setValue(safe(data.lieu));
             if ((dataTableau[ligneExistante - 1][7] === "" || dataTableau[ligneExistante - 1][7] === "Inconnu") && boutonLien !== "") {
                 sheet.getRange(ligneExistante, 8).setValue(boutonLien);
             }
-
+            
             return {succes: true, type: "enrichissement", info: `Enrichi: ${data.entreprise}`};
         }
     }
@@ -190,18 +190,18 @@ ${contentToAnalyze}
     const formuleStatut = `=IF(G${nextRow}="oui"; IF(TODAY()-B${nextRow}>60; "Refusé"; "En attente"); "")`;
 
     console.log(`| - [ACTION] Ajout d'une nouvelle ligne pour "${data.entreprise}".`);
-
+    
     sheet.appendRow([
-        safe(data.entreprise),
-        dateC,
-        safe(data.poste),
-        "",
-        safe(data.lieu),
-        "IA Auto-Détection",
-        "oui",
+        safe(data.entreprise), 
+        dateC, 
+        safe(data.poste), 
+        "", 
+        safe(data.lieu), 
+        "IA Auto-Détection", 
+        "oui", 
         boutonLien
     ]);
-
+    
     sheet.getRange(nextRow, 4).setFormula(formuleStatut);
 
     return {succes: true, type: "ajout", info: `Ajouté: ${data.entreprise}`};
