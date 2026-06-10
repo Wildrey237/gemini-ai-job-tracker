@@ -1,11 +1,11 @@
 /**
- * SCRIPT 1 : Détection, Ajout et Enrichissement des Candidatures
- * Version Finale Nettoyée - Sécurité Anti-Bruit & Boutons Liens
+ * SCRIPT 1 : Détection et Ajout des Candidatures
+ * Chaque email valide génère toujours une nouvelle ligne (pas d'enrichissement).
  */
 function analyserMailsCandidaturesEnvoyees() {
     const nomF = "add_candidature";
     const sheetName = getParam('SHEET_NAME');
-    let stats = {scannes: 0, ajouts: 0, enrichis: 0, details: []};
+    let stats = {scannes: 0, ajouts: 0, details: []};
 
     console.log(">>> [DEBUT] Scan des candidatures...");
 
@@ -18,26 +18,22 @@ function analyserMailsCandidaturesEnvoyees() {
         stats.scannes = threads.length;
 
         if (stats.scannes > 0) {
-            for (const thread of threads) {
-                // On recharge les données à chaque passage pour détecter les ajouts faits durant la même exécution
-                const lastRow = Math.max(sheet.getLastRow(), 1);
-                const dataTableau = sheet.getRange(1, 1, lastRow, 8).getValues();
+            const label = GmailApp.getUserLabelByName("IA-Candidature-Ajoutée") || GmailApp.createLabel("IA-Candidature-Ajoutée");
 
-                const resultat = traiterNouvelEmailAmeliore(thread, sheet, dataTableau);
+            for (const thread of threads) {
+                const resultat = traiterNouvelEmailAmeliore(thread, sheet);
 
                 if (resultat && resultat.succes) {
-                    if (resultat.type === "ajout") stats.ajouts++;
-                    if (resultat.type === "enrichissement") stats.enrichis++;
+                    stats.ajouts++;
                     stats.details.push(resultat.info);
 
                     SpreadsheetApp.flush();
-                    const label = GmailApp.getUserLabelByName("IA-Candidature-Ajoutée") || GmailApp.createLabel("IA-Candidature-Ajoutée");
                     thread.addLabel(label);
                 }
             }
         }
 
-        const resume = `Scan: ${stats.scannes} | Ajouts: ${stats.ajouts} | Enrichis: ${stats.enrichis}`;
+        const resume = `Scan: ${stats.scannes} | Ajouts: ${stats.ajouts}`;
         console.log(">>> [RESUME FINAL] : " + resume);
         writeLog(nomF, resume, "Non", stats.details.join("\n"));
 
@@ -80,7 +76,7 @@ function collecterNouvellesCandidatures() {
     const motsCles = '(confirmation OR received OR reçu OR candidature OR application OR "Thank you" OR submitted OR "candidature envoyée")';
 
     // 4. Construction de la requête finale
-    const query = `newer_than:2d in:inbox -label:IA-Candidature-Ajoutée -label:IA-Réponse-En-Cours ${exclusionsStatiques} ${exclusionsDynamiques} ${motsCles}`;
+    const query = `newer_than:2d in:inbox -label:IA-Candidature-Ajoutée -label:IA-Réponse-En-Cours -label:IA-Réponse-Refusée -label:IA-Réponse-Entretien -label:IA-Réponse-Acceptée ${exclusionsStatiques} ${exclusionsDynamiques} ${motsCles}`;
     
     console.log(">>> Requête Gmail générée : " + query);
     
@@ -88,9 +84,9 @@ function collecterNouvellesCandidatures() {
 }
 
 /**
- * TRAITEMENT : Analyse IA et insertion/enrichissement
+ * TRAITEMENT : Analyse IA et insertion
  */
-function traiterNouvelEmailAmeliore(thread, sheet, dataTableau) {
+function traiterNouvelEmailAmeliore(thread, sheet) {
     const message = thread.getMessages().pop();
     const rawSender = message.getFrom().toLowerCase();
     const subject = message.getSubject();
@@ -111,14 +107,16 @@ function traiterNouvelEmailAmeliore(thread, sheet, dataTableau) {
     }
 
     // 2. ANALYSE IA GEMINI
-  const prompt = `
+    const prompt = `
 Analyse ce mail de recrutement.
 
 Objectif :
-Déterminer si ce mail est un accusé de réception ou une confirmation liée à une candidature envoyée par l'utilisateur.
+Déterminer si ce mail est UNIQUEMENT un accusé de réception automatique confirmant que la candidature a bien été reçue/enregistrée, sans aucune décision.
 
-Consignes :
-- "est_candidature" = true si le mail confirme qu'une candidature a bien été reçue ou enregistrée.
+Règles strictes :
+- "est_candidature" = true SEULEMENT si le mail est un accusé de réception pur (la candidature vient d'être reçue/enregistrée, aucune décision n'a encore été prise).
+- "est_candidature" = false si le mail contient une décision : refus, rejet, "nous n'avons pas retenu", "ne correspond pas", entretien proposé, offre acceptée, ou toute autre réponse RH.
+- "est_candidature" = false si le mail mentionne "regret", "désolé", "malheureusement", "nous n'avons pas retenu", "pas retenu", "other candidates", "not selected", "unfortunately".
 - Extrais le nom réel de l'entreprise.
 - Extrais le poste si visible.
 - Extrais le lieu si visible, sinon "Inconnu".
@@ -147,45 +145,13 @@ ${contentToAnalyze}
         return {succes: false};
     }
 
-    // 3. LOGIQUE DE MATCHING
-    let ligneExistante = -1;
-    const nomIA = normaliserS1(data.entreprise);
-
-    for (let i = 0; i < dataTableau.length; i++) {
-        const nomCell = normaliserS1(dataTableau[i][0].toString());
-        if (nomCell === "") continue;
-
-        if (nomCell.includes(nomIA) || nomIA.includes(nomCell)) {
-            ligneExistante = i + 1;
-            break;
-        }
-    }
-
     const safe = (val) => (val && val !== "null" && val !== "undefined") ? val.toString().trim() : "Inconnu";
     const dateC = Utilities.formatDate(message.getDate(), "GMT+1", "dd/MM/yyyy");
-    
-    // Création du bouton lien stylisé
+
     const urlLien = (data.lien && data.lien.includes("http")) ? data.lien : "";
     const boutonLien = urlLien ? `=HYPERLINK("${urlLien}"; "🔗 Accéder")` : "";
 
-    // 4. DECISION : ENRICHISSEMENT OU NOUVEL AJOUT
-    if (ligneExistante !== -1) {
-        const statutActuel = dataTableau[ligneExistante - 1][3]; // Colonne D
-
-        if (statutActuel === "En attente" || statutActuel === "" || statutActuel.toString().includes("IF")) {
-            console.log(`| - [ACTION] Enrichissement ligne ${ligneExistante}.`);
-            
-            if (dataTableau[ligneExistante - 1][2] === "Inconnu") sheet.getRange(ligneExistante, 3).setValue(safe(data.poste));
-            if (dataTableau[ligneExistante - 1][4] === "Inconnu") sheet.getRange(ligneExistante, 5).setValue(safe(data.lieu));
-            if ((dataTableau[ligneExistante - 1][7] === "" || dataTableau[ligneExistante - 1][7] === "Inconnu") && boutonLien !== "") {
-                sheet.getRange(ligneExistante, 8).setValue(boutonLien);
-            }
-            
-            return {succes: true, type: "enrichissement", info: `Enrichi: ${data.entreprise}`};
-        }
-    }
-
-    // --- NOUVEL AJOUT ---
+    // NOUVEL AJOUT
     const nextRow = sheet.getLastRow() + 1;
     const formuleStatut = `=IF(G${nextRow}="oui"; IF(TODAY()-B${nextRow}>60; "Refusé"; "En attente"); "")`;
 
@@ -204,5 +170,5 @@ ${contentToAnalyze}
     
     sheet.getRange(nextRow, 4).setFormula(formuleStatut);
 
-    return {succes: true, type: "ajout", info: `Ajouté: ${data.entreprise}`};
+    return {succes: true, info: `Ajouté: ${data.entreprise}`};
 }
