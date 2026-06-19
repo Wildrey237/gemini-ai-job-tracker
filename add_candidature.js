@@ -10,6 +10,11 @@ function analyserMailsCandidaturesEnvoyees() {
     console.log(">>> [DEBUT] Scan des candidatures...");
 
     try {
+        if (!verifierAPIGemini()) {
+            writeLog(nomF, "API Gemini indisponible — pipeline S1 annulé.", "Oui", "");
+            return;
+        }
+
         const ss = SpreadsheetApp.getActiveSpreadsheet();
         const sheet = ss.getSheetByName(sheetName);
         if (!sheet) throw new Error(`Feuille ${sheetName} introuvable.`);
@@ -106,7 +111,14 @@ function traiterNouvelEmailAmeliore(thread, sheet) {
         return {succes: false};
     }
 
-    // 2. ANALYSE IA GEMINI
+    // 2. PRÉ-FILTRE : éviter un appel Gemini inutile sur un email sans aucun signal RH
+    if (!emailSembleCandidature(subject, contentToAnalyze)) {
+        console.log(`| - [SKIP PRÉ-FILTRE] Aucun indicateur de candidature détecté.`);
+        return {succes: false};
+    }
+
+    // 3. ANALYSE IA GEMINI
+    Utilities.sleep(13000); // Respect limite 5 RPM (1 appel / 13s max)
     const prompt = `
 Analyse ce mail de recrutement.
 
@@ -116,7 +128,8 @@ Déterminer si ce mail est UNIQUEMENT un accusé de réception automatique confi
 Règles strictes :
 - "est_candidature" = true SEULEMENT si le mail est un accusé de réception pur (la candidature vient d'être reçue/enregistrée, aucune décision n'a encore été prise).
 - "est_candidature" = false si le mail contient une décision : refus, rejet, "nous n'avons pas retenu", "ne correspond pas", entretien proposé, offre acceptée, ou toute autre réponse RH.
-- "est_candidature" = false si le mail mentionne "regret", "désolé", "malheureusement", "nous n'avons pas retenu", "pas retenu", "other candidates", "not selected", "unfortunately".
+- "est_candidature" = false si le mail contient un refus ACTUEL et DÉFINITIF : "regret", "désolé", "malheureusement", "nous n'avons pas retenu", "other candidates", "not selected", "unfortunately".
+- EXCEPTION IMPORTANTE : les formules conditionnelles du type "sans nouvelle de notre part dans X semaines, considérez que..." ou "faute de retour de notre part..." ou "si vous ne recevez pas de réponse..." sont des disclaimers standards d'accusé de réception — elles NE constituent PAS un refus. Dans ce cas "est_candidature" = true.
 - Extrais le nom réel de l'entreprise.
 - Extrais le poste si visible.
 - Extrais le lieu si visible, sinon "Inconnu".
@@ -171,4 +184,24 @@ ${contentToAnalyze}
     sheet.getRange(nextRow, 4).setFormula(formuleStatut);
 
     return {succes: true, info: `Ajouté: ${data.entreprise}`};
+}
+
+/**
+ * PRÉ-FILTRE : vérifie qu'un email contient au moins un signal RH avant d'appeler Gemini.
+ * Filtre volontairement large pour ne pas rater de vraies candidatures atypiques.
+ */
+function emailSembleCandidature(sujet, corps) {
+    const texte = (sujet + " " + corps).toLowerCase();
+    const indicateurs = [
+        // Français
+        "candidature", "postuler", "poste", "stage", "alternance", "apprentissage",
+        "recrutement", "votre dossier", "votre profil", "offre d'emploi", "offre d emploi",
+        "merci pour votre", "nous avons bien reçu", "bien été enregistrée", "bien recu",
+        "votre cv", "votre lettre", "votre demande",
+        // Anglais
+        "application", "job", "position", "internship", "role", "candidate",
+        "applied", "hiring", "we received", "thank you for your", "your application",
+        "has been submitted", "has been received", "your resume", "your profile"
+    ];
+    return indicateurs.some(mot => texte.includes(mot));
 }

@@ -24,6 +24,11 @@ function analyserNewslettersOpportunites() {
             throw new Error(`Onglets "${nomSheetDest}" ou "${nomSheetConfig}" introuvables.`);
         }
 
+        if (!verifierAPIGemini()) {
+            writeLog(nomF, "API Gemini indisponible — pipeline S3 annulé.", "Oui", "");
+            return;
+        }
+
         // Lecture de la configuration métier/emails
         const config = recupererConfiguration(sheetConfig);
         if (config.emails.length === 0) {
@@ -41,7 +46,7 @@ function analyserNewslettersOpportunites() {
 
             for (const thread of threads) {
                 try {
-                    Utilities.sleep(2000); // Pause pour éviter le spam API
+                    Utilities.sleep(13000); // Respect limite 5 RPM (1 appel / 13s max)
                     const resultat = traiterUneNewsletter(thread, sheetDest, config);
 
                     // Archivage pour ne pas traiter deux fois

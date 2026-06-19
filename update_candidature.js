@@ -29,6 +29,11 @@ function analyserMailsReponsesRecues() {
         if (!sheet) throw new Error(`Feuille "${nomSheet}" introuvable.`);
         if (!sheetConfig) throw new Error(`Feuille de configuration "${nomSheetConfig}" introuvable.`);
 
+        if (!verifierAPIGemini()) {
+            writeLog(nomF, "API Gemini indisponible — pipeline S2 annulé.", "Oui", "");
+            return;
+        }
+
         // 1. RECUPERATION DE LA CONFIGURATION (Pour la Blacklist dynamique)
         const configSourcing = recupererConfiguration(sheetConfig);
         const blacklistDynamique = configSourcing.emails.map(e => e.toLowerCase().trim());
@@ -44,7 +49,7 @@ function analyserMailsReponsesRecues() {
         const fullData = sheet.getRange(1, 1, lastRow, 9).getValues();
         const entreprisesEnAttente = fullData
             .map((row, index) => ({nom: row[0].toString().trim(), statut: row[3], ligne: index + 1}))
-            .filter(item => (item.statut === "En attente" || item.statut === "") && item.nom !== "" && item.nom !== "Entreprise");
+            .filter(item => (item.statut === "En attente" || item.statut === "" || item.statut === "Entretien") && item.nom !== "" && item.nom !== "Entreprise");
 
         console.log(`[DATA] ${entreprisesEnAttente.length} entreprises "En attente" détectées.`);
 
@@ -55,7 +60,7 @@ function analyserMailsReponsesRecues() {
 
         if (stats.emailsScannes > 0) {
             for (const thread of threads) {
-                Utilities.sleep(2000); // Anti-429
+                Utilities.sleep(13000); // Respect limite 5 RPM (1 appel / 13s max)
 
                 // Traitement avec la blacklist dynamique
                 const resultat = traiterUnFilOptimise(thread, sheet, entreprisesEnAttente, blacklistDynamique);
@@ -123,7 +128,7 @@ function traiterUnFilOptimise(thread, sheet, entreprisesEnAttente, blacklist) {
     const lastMessage = messages[messages.length - 1];
     const emailExpediteur = lastMessage.getFrom().toLowerCase();
     const sujet = lastMessage.getSubject();
-    const corps = lastMessage.getPlainBody();
+    const corps = (lastMessage.getPlainBody() || "").substring(0, 2500);
 
     // FILTRE : BLACKLIST DYNAMIQUE
     const estBlackliste = blacklist.some(email => emailExpediteur.includes(email));
@@ -238,8 +243,6 @@ Réponds UNIQUEMENT en JSON valide :
 
     const oldNote = sheet.getRange(cible.ligne, 6).getValue();
     sheet.getRange(cible.ligne, 6).setValue(oldNote ? `${oldNote} | ${note}` : note);
-
-    appliquerLabelVerdict(thread, statutFinal);
 
     return {succes: true, info: `${analyse.entreprise} (${statutFinal}) - Ligne ${cible.ligne}`};
 }
